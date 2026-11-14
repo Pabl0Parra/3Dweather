@@ -1,6 +1,8 @@
 // Mounts the globe: canvases, data loading, view state and the draw loop.
 import { FrameStore, RETRY_DELAYS_MS, LOAD_NOTICE } from "./frames";
-import { parseHash } from "./hash";
+import { attachGestures } from "./gestures";
+import { formatHash, parseHash } from "./hash";
+import { drawOverlay } from "./overlay";
 import { framePair, loadLatest, loadManifest, type GlobeManifest } from "./manifest";
 import { GlobeRenderer } from "./renderer";
 import { clampView, type View } from "./view";
@@ -55,6 +57,13 @@ export async function initGlobe(root: HTMLElement): Promise<GlobeHandle> {
     notice.hidden = m === null;
   };
 
+  const overlay = document.createElement("canvas");
+  overlay.className = "globe-overlay";
+  overlay.setAttribute("aria-hidden", "true");
+  canvas.after(overlay);
+  const ctx = overlay.getContext("2d")!;
+  let coast: number[][] = [];
+
   const renderer = new GlobeRenderer(canvas);
   let view = parseHash(location.hash) ?? DEFAULT_VIEW;
   let hour = 0;
@@ -69,19 +78,39 @@ export async function initGlobe(root: HTMLElement): Promise<GlobeHandle> {
     ready: false,
     drawn: false,
     view: () => view,
-    setView: (v) => { view = clampView(v); dirty = true; },
+    setView: (v) => setView(v),
     hour: () => hour,
     setHour: (h) => { hour = h; void applyHour(); },
   };
   if (import.meta.env.DEV || new URLSearchParams(location.search).has("debug")) (window as any).__globe = handle;
 
+  // The hash follows the view, written once the view has settled.
+  let hashTimer = 0;
+  function setView(v: View): void {
+    view = clampView(v);
+    dirty = true;
+    clearTimeout(hashTimer);
+    hashTimer = window.setTimeout(() => history.replaceState(null, "", formatHash(view)), 600);
+  }
+  window.addEventListener("hashchange", () => {
+    const v = parseHash(location.hash);
+    if (v) { view = v; dirty = true; }
+  });
+
   new ResizeObserver(() => { dirty = true; }).observe(root);
+  attachGestures(root, () => view, setView, () => ({ w: root.clientWidth, h: root.clientHeight }));
 
   const frame = () => {
     if (dirty) {
       dirty = false;
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      renderer.draw(view, root.clientWidth, root.clientHeight, dpr);
+      const w = root.clientWidth, h = root.clientHeight;
+      renderer.draw(view, w, h, dpr);
+      // Both canvases share one size and DPR so they stay aligned.
+      const ow = Math.round(w * dpr), oh = Math.round(h * dpr);
+      if (overlay.width !== ow || overlay.height !== oh) { overlay.width = ow; overlay.height = oh; }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawOverlay(ctx, view, w, h, coast);
       if (landReady) handle.drawn = true;
       if (landReady && dataReady) handle.ready = true;
     }
@@ -108,6 +137,15 @@ export async function initGlobe(root: HTMLElement): Promise<GlobeHandle> {
   void withRetry(() => loadBitmap(`${ASSET_BASE}/land-mask.png`), showNotice).then((img) => {
     renderer.setLandMask(img);
     landReady = true;
+    dirty = true;
+  });
+
+  void withRetry(async () => {
+    const res = await fetch(`${ASSET_BASE}/coast.json`);
+    if (!res.ok) throw new Error(`coast.json: HTTP ${res.status}`);
+    return (await res.json()) as { lines: number[][] };
+  }, showNotice).then((c) => {
+    coast = c.lines;
     dirty = true;
   });
 

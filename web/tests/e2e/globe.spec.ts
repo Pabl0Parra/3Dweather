@@ -56,6 +56,32 @@ test("a failed sprite shows the retry notice and still draws land", async ({ pag
   for (const [got, want] of [[r, 27], [g, 38], [b, 54]]) expect(Math.abs(got - want)).toBeLessThanOrEqual(12);
 });
 
+test("dragging right moves the hash longitude west", async ({ page }) => {
+  await open(page, "#20,0,1");
+  const box = (await page.locator("#globe").boundingBox())!;
+  const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 200, cy, { steps: 10 });
+  await page.waitForTimeout(150); // hold still so there is no inertia
+  await page.mouse.up();
+  await page.waitForFunction(() => /^#20\.00,-\d/.test(location.hash), null, { timeout: 1500 });
+});
+
+test("the wheel does not zoom before the map is clicked", async ({ page }) => {
+  await open(page, "#20,0,1");
+  const box = (await page.locator("#globe").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, -400);
+  await expect(page.getByText("Click the map to zoom with the wheel")).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__globe.view().zoom)).toBe(1);
+});
+
+test("a malformed hash falls back to the default view", async ({ page }) => {
+  await open(page, "#abc");
+  expect(await page.evaluate(() => (window as any).__globe.view())).toEqual({ lat0: 20, lon0: 0, zoom: 1 });
+});
+
 test("no console errors on load", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
