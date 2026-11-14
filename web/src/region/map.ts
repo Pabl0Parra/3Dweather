@@ -367,9 +367,10 @@ export async function mountRegionMap(
   });
 
   // --- summary ---
+  let peaks: ReturnType<typeof peakSummary> | null = null; // what the page shows, so a click lands on it
   function showSummary(): void {
     if (!m) return;
-    const s = peakSummary(m, units);
+    const s = (peaks = peakSummary(m, units, new Date()));
     const row = (key: "wind" | "rain", title: string) => {
       const p = s[key];
       return `<li><button type="button" class="rm-peak" data-peak="${key}"><span class="rm-peak-title">${title}</span>
@@ -379,9 +380,9 @@ export async function mountRegionMap(
   }
   opts.summary.addEventListener("click", (e) => {
     const btn = (e.target as Element).closest<HTMLButtonElement>("button[data-peak]");
-    if (!btn || !m) return;
+    if (!btn || !m || !peaks) return;
     const key = btn.dataset.peak as "wind" | "rain";
-    const p = peakSummary(m, units)[key];
+    const p = peaks[key];
     setLayer(key);
     handle.setHour(p.hour);
     setView({ lon0: p.lon, lat0: p.lat, zoom: Math.max(view.zoom, 3) });

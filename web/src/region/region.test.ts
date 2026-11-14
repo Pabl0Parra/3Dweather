@@ -99,6 +99,18 @@ test("peak summary names the time in the region's zone and the nearest city", ()
   expect(nearestCity(M, 48.4, -4.4).name).toBe("Brest");
 });
 
+test("peaks leave out hours already past", () => {
+  const wind = Array.from({ length: 73 }, (_, h) => [h === 3 ? 40 : h === 30 ? 25 : 10, 50.0, -1.0]);
+  const m = { ...M, peaks: { ...M.peaks, wind } };
+  expect(peakSummary(m, DEFAULT_UNITS).wind.hour).toBe(3); // no clock: the whole run
+  const s = peakSummary(m, DEFAULT_UNITS, new Date("2026-11-13T15:30Z")); // hour 9.5
+  expect(s.wind.hour).toBe(30);
+  expect(s.wind.when).toBe("Sat 14 Nov, 12:00");
+  expect(s.rain.hour).toBe(72);
+  // Past the end of the run: the last hour is all there is.
+  expect(peakSummary(m, DEFAULT_UNITS, new Date("2026-12-01T00:00Z")).wind.hour).toBe(72);
+});
+
 test("every region's time zone is a real zone", () => {
   expect(REGIONS).toHaveLength(12);
   for (const r of REGIONS) expect(() => new Intl.DateTimeFormat("en-GB", { timeZone: r.tz })).not.toThrow();

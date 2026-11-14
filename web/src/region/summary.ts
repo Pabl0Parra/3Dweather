@@ -1,5 +1,6 @@
 // "The next three days": the strongest wind and heaviest rain anywhere on the map.
 import { formatRain, formatSpeed, type Units } from "../globe/units";
+import { initialHour } from "../globe/timeline";
 import type { RegionManifest } from "./sheet";
 
 export type PeakLine = { value: string; when: string; where: string; lat: number; lon: number; hour: number };
@@ -31,18 +32,22 @@ export function localTime(t: Date, timeZone: string): string {
   return `${parts.weekday} ${parts.day} ${parts.month}, ${parts.hour}:${parts.minute}`;
 }
 
-function line(m: RegionManifest, series: number[][], value: (v: number) => string): PeakLine {
-  let h = 0;
-  series.forEach((p, i) => { if (p[0] > series[h][0]) h = i; });
+function line(m: RegionManifest, series: number[][], from: number, value: (v: number) => string): PeakLine {
+  let h = Math.min(from, series.length - 1);
+  for (let i = h + 1; i < series.length; i++) if (series[i][0] > series[h][0]) h = i;
   const [v, lat, lon] = series[h];
   const near = nearestCity(m, lat, lon);
   const where = near.km < 15 ? `near ${near.name}` : `about ${Math.round(near.km / 10) * 10 || Math.round(near.km)} km from ${near.name}`;
   return { value: value(v), when: localTime(new Date(Date.parse(m.run) + h * 3.6e6), m.tz), where, lat, lon, hour: h };
 }
 
-export function peakSummary(m: RegionManifest, u: Units): { wind: PeakLine; rain: PeakLine } {
+/** Peaks from the hour containing `now` (the whole run when no clock is given) to the end of the run. */
+const frameCountOf = (m: RegionManifest) => m.peaks.wind.length;
+
+export function peakSummary(m: RegionManifest, u: Units, now?: Date): { wind: PeakLine; rain: PeakLine } {
+  const from = now ? Math.floor(initialHour(m.run, now, frameCountOf(m) - 1)) : 0;
   return {
-    wind: line(m, m.peaks.wind, (v) => formatSpeed(v, u.speed)),
-    rain: line(m, m.peaks.rain, (v) => formatRain(v, u.length)),
+    wind: line(m, m.peaks.wind, from, (v) => formatSpeed(v, u.speed)),
+    rain: line(m, m.peaks.rain, from, (v) => formatRain(v, u.length)),
   };
 }
