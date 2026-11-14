@@ -133,8 +133,8 @@ class S3Store:
 R2_ENV = ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET")
 
 
-def s3_store_from_env() -> S3Store:
-    """R2 from the four GitHub Actions secrets (see docs/deploy.md)."""
+def s3_store_from_env(bucket: str | None = None) -> S3Store:
+    """R2 from the four GitHub Actions secrets (see docs/deploy.md); `bucket` overrides R2_BUCKET."""
     missing = [k for k in R2_ENV if not os.environ.get(k)]
     if missing:
         raise RuntimeError(f"missing environment variables: {', '.join(missing)}")
@@ -146,16 +146,18 @@ def s3_store_from_env() -> S3Store:
         region_name="auto",
         config=Config(retries={"max_attempts": 8, "mode": "standard"},
                       request_checksum_calculation="when_required", response_checksum_validation="when_required"))
-    return S3Store(client, os.environ["R2_BUCKET"])
+    return S3Store(client, bucket or os.environ["R2_BUCKET"])
 
 
 def store_from_arg(arg: str) -> Store:
-    """`r2` (from the environment) or `dir:PATH`."""
+    """`r2` (from the environment), `r2:BUCKET` (same account, another bucket) or `dir:PATH`."""
     if arg == "r2":
         return s3_store_from_env()
+    if arg.startswith("r2:") and len(arg) > 3:
+        return s3_store_from_env(arg[3:])
     if arg.startswith("dir:"):
         return DirStore(Path(arg[4:]))
-    raise ValueError(f"--store must be r2 or dir:PATH, got {arg!r}")
+    raise ValueError(f"--store must be r2, r2:BUCKET or dir:PATH, got {arg!r}")
 
 
 def _iso(t: datetime) -> str:

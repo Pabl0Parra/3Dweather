@@ -64,6 +64,19 @@ def test_static_builds_and_uploads_the_catalogue():
     assert "--prefix catalogue --max-age 86400" in t
 
 
+def test_static_builds_tide_constants_with_fes2022_kept_private():
+    t = text("static.yml")
+    assert "python -m pipeline model-constants --catalogue" in t
+    assert "python -m pipeline tide-constants --catalogue" in t
+    # NOAA's per-station responses are cached between runs.
+    assert "path: noaa-cache" in t and "restore-keys: noaa-cache-" in t
+    # FES2022 constants come only from the optional private bucket, and anything built from them stays there.
+    assert "R2_PRIVATE_BUCKET: ${{ secrets.R2_PRIVATE_BUCKET }}" in t
+    assert 'python -m pipeline get --key fes2022/model-constants.json' in t and '--store "r2:$R2_PRIVATE_BUCKET"' in t
+    assert '--model "$RUNNER_TEMP/models/fes2022.json" --model "$RUNNER_TEMP/models/eot20.json"' in t
+    assert '--prefix tides-private --max-age 0 --store "r2:$R2_PRIVATE_BUCKET"' in t
+
+
 def test_site_builds_with_the_catalogue_and_publishes_changed_files():
     t = text("site.yml")
     assert "branches: [main]" in t and "workflow_dispatch:" in t

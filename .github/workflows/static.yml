@@ -20,6 +20,7 @@ jobs:
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_PRIVATE_BUCKET: ${{ secrets.R2_PRIVATE_BUCKET }}
       EOT20_URL: https://www.seanoe.org/data/00683/79489/data/85762.zip
     steps:
       - uses: actions/checkout@v4
@@ -45,3 +46,34 @@ jobs:
       - run: python -m pipeline upload --src "$RUNNER_TEMP/static" --prefix assets/globe --max-age 604800 --store r2
       - run: python -m pipeline catalogue --inputs "$RUNNER_TEMP/catalogue-inputs" --out "$RUNNER_TEMP/catalogue"
       - run: python -m pipeline upload --src "$RUNNER_TEMP/catalogue" --prefix catalogue --max-age 86400 --store r2
+      # Tide constants: NOAA harmonic constants and offsets (public domain), donors, and a global
+      # model at every other station. EOT20 always; FES2022 first where the owner has uploaded
+      # constants sampled from it (tools/fes2022_constants.py) to the optional private bucket.
+      - run: python -m pipeline model-constants --catalogue "$RUNNER_TEMP/catalogue/stations.json" --eot20 eot20/eot20.zip --out "$RUNNER_TEMP/models/eot20.json"
+      - name: FES2022 constants (private bucket, optional)
+        if: env.R2_PRIVATE_BUCKET != ''
+        run: |
+          code=0
+          python -m pipeline get --key fes2022/model-constants.json --out "$RUNNER_TEMP/models/fes2022.json" --store "r2:$R2_PRIVATE_BUCKET" || code=$?
+          if [ "$code" -eq 3 ]; then
+            echo "::notice::no fes2022/model-constants.json in the private bucket: EOT20 everywhere"
+          elif [ "$code" -ne 0 ]; then
+            exit "$code"
+          fi
+      # One NOAA request per station per run is slow and impolite; responses rarely change.
+      - uses: actions/cache@v4
+        with:
+          path: noaa-cache
+          key: noaa-cache-${{ github.run_id }}
+          restore-keys: noaa-cache-
+      - run: python -m pipeline tide-constants --catalogue "$RUNNER_TEMP/catalogue/stations.json" --noaa "$RUNNER_TEMP/catalogue-inputs/noaa-tidepredictions.json" --noaa-cache noaa-cache --model "$RUNNER_TEMP/models/fes2022.json" --model "$RUNNER_TEMP/models/eot20.json" --out "$RUNNER_TEMP/tide-constants/tide-constants.json"
+      # FES2022's licence covers our use, not passing its numbers on: with a private bucket the
+      # constants live there (the Tides workflow reads them from it); otherwise they are EOT20
+      # and NOAA only (CC BY 4.0 and public domain) and go next to the catalogue.
+      - name: Upload tide constants
+        run: |
+          if [ -n "$R2_PRIVATE_BUCKET" ]; then
+            python -m pipeline upload --src "$RUNNER_TEMP/tide-constants" --prefix tides-private --max-age 0 --store "r2:$R2_PRIVATE_BUCKET"
+          else
+            python -m pipeline upload --src "$RUNNER_TEMP/tide-constants" --prefix catalogue --max-age 86400 --store r2
+          fi

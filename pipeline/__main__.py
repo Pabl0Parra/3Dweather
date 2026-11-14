@@ -8,6 +8,11 @@ python -m pipeline tide-atlas --eot20 ZIP_OR_DIR --out DIR
 python -m pipeline catalogue --inputs DIR --out DIR
 python -m pipeline publish-site --dist DIR --store (r2|dir:PATH)
 python -m pipeline get --key KEY --out FILE --store (r2|dir:PATH)
+python -m pipeline model-constants --catalogue STATIONS_JSON --eot20 ZIP_OR_DIR --out FILE
+python -m pipeline tide-constants --catalogue STATIONS_JSON --noaa NOAA_LIST --noaa-cache DIR
+                                  --model FILE [--model FILE ...] --out FILE
+
+Stores: r2 (bucket R2_BUCKET), r2:BUCKET (another bucket, same account) or dir:PATH.
 """
 from __future__ import annotations
 
@@ -68,7 +73,42 @@ def main(argv: list[str] | None = None) -> int:
     get.add_argument("--key", required=True)
     get.add_argument("--out", required=True, type=Path)
     get.add_argument("--store", required=True)
+    mc = sub.add_parser("model-constants", help="sample EOT20 at every catalogue station")
+    mc.add_argument("--catalogue", required=True, type=Path, help="stations.json")
+    mc.add_argument("--eot20", required=True, type=Path, help="the downloaded EOT20 zip, or a folder of *_ocean_eot20.nc")
+    mc.add_argument("--out", required=True, type=Path)
+    tc = sub.add_parser("tide-constants", help="one tide-constants entry per station (NOAA, offsets, donors, models)")
+    tc.add_argument("--catalogue", required=True, type=Path, help="stations.json")
+    tc.add_argument("--noaa", required=True, type=Path, help="NOAA's tide-prediction station list (catalogue input)")
+    tc.add_argument("--noaa-cache", required=True, type=Path, help="folder caching NOAA's per-station responses")
+    tc.add_argument("--model", action="append", default=[], type=Path,
+                    help="model constants file; the first with constants wins per station; missing files are skipped")
+    tc.add_argument("--out", required=True, type=Path)
     args = parser.parse_args(argv)
+
+    if args.command == "model-constants":
+        import json
+        from .tide_constants import write_model_file
+        from .tide_model import ModelReader, sample_model
+        records = json.loads(args.catalogue.read_text(encoding="utf-8"))
+        reader = ModelReader.eot20(args.eot20)
+        samples = sample_model(records, reader)
+        write_model_file(args.out, reader.label, samples)
+        print(f"{sum(v is not None for v in samples.values())} of {len(samples)} stations sampled -> {args.out}")
+        return 0
+    if args.command == "tide-constants":
+        import json
+        from collections import Counter
+        from . import tide_constants as tcm
+        records = json.loads(args.catalogue.read_text(encoding="utf-8"))
+        models = [tcm.read_model(p) for p in args.model if p.exists()]
+        noaa = tcm.fetch_noaa(tcm.noaa_stations(args.noaa), args.noaa_cache)
+        out = tcm.build_constants(records, noaa, models)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(out, separators=(",", ":")), encoding="utf-8")
+        kinds = Counter(e["kind"] for e in out["stations"].values())
+        print(", ".join(f"{k} {n}" for k, n in sorted(kinds.items())) + f" -> {args.out}")
+        return 0
 
     if args.command == "publish-site":
         from .site import publish_site
