@@ -8,7 +8,7 @@ const HAS_DATA = existsSync(fileURLToPath(new URL("../../public/wx/latest.json",
 test.skip(!HAS_DATA, "web/public/wx/latest.json missing: build the dev data first");
 
 async function open(page: Page, hash: string) {
-  await page.goto(`/wave-map?debug${hash}`);
+  await page.goto(`/wave-map?debug&nosplash${hash}`);
   await page.waitForFunction(() => (window as any).__globe?.ready === true, null, { timeout: 30_000 });
   await setHour(page, 0);
 }
@@ -59,7 +59,7 @@ test("no seam at the antimeridian", async ({ page }) => {
 test("a failed sprite shows the retry notice and still draws land", async ({ page }) => {
   // Every chunk: the timeline opens at the current hour, which may be in any chunk.
   await page.route("**/globe-w*.webp", (route) => route.abort());
-  await page.goto("/wave-map?debug#40.4,-3.7,4");
+  await page.goto("/wave-map?debug&nosplash#40.4,-3.7,4");
   await expect(page.getByText("Couldn't load the forecast")).toBeVisible({ timeout: 15_000 });
   await page.waitForFunction(() => (window as any).__globe?.drawn === true);
   const [r, g, b] = await pixel(page);
@@ -123,7 +123,7 @@ test("without WebGL the page says so instead of staying blank", async ({ page })
       return type.startsWith("webgl") ? null : (orig as any).call(this, type, ...rest);
     };
   });
-  await page.goto("/wave-map#20,0,1");
+  await page.goto("/wave-map?nosplash#20,0,1");
   await expect(page.locator("#globe")).toContainText("needs WebGL");
   expect(errors).toEqual([]);
 });

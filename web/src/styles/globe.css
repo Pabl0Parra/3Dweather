@@ -68,7 +68,7 @@ html, body {
 .units-menu legend { padding: 0 0 4px; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; }
 .units-menu input { accent-color: var(--cyan); }
 
-.wave-page { min-height: 100vh; display: flex; flex-direction: column; }
+.wave-page { min-height: calc(100vh - 48px); display: flex; flex-direction: column; } /* below the 48 px header */
 
 .globe {
   position: relative;

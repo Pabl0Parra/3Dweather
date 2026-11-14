@@ -1,5 +1,6 @@
 ---
 import "../styles/globe.css";
+import "../styles/splash.css";
 ---
 <!doctype html>
 <html lang="en">
@@ -8,6 +9,15 @@ import "../styles/globe.css";
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Wave map · 3Dweather</title>
     <meta name="description" content="Forecast wave height for the next seven days on an interactive 3D globe." />
+    <script is:inline>
+      // Hide the page chrome before first paint when the opening splash will play.
+      try {
+        if (!/[?&]nosplash/.test(location.search) && sessionStorage.getItem("3dw.splash") !== "1")
+          document.documentElement.classList.add("splash-pending");
+      } catch (e) {
+        document.documentElement.classList.add("splash-pending");
+      }
+    </script>
   </head>
   <body>
     <header class="site-header">
@@ -30,11 +40,24 @@ import "../styles/globe.css";
     </main>
     <script>
       import { initGlobe } from "../globe/globe";
+      import { markPlayed, shouldPlay } from "../splash/intro";
+      import { playSplash } from "../splash/splash";
+
+      const session = (() => { try { return window.sessionStorage; } catch { return null; } })();
+      const play = shouldPlay(location.search, session);
       initGlobe(document.getElementById("globe")!, {
         timeline: document.getElementById("timeline")!,
         legend: document.getElementById("legend")!,
         unitsButton: document.getElementById("units-button") as HTMLButtonElement,
         biggestButton: document.getElementById("biggest-button") as HTMLButtonElement,
+      }).then((globe) => {
+        if (!globe || !play) {
+          document.documentElement.classList.remove("splash-pending");
+          return;
+        }
+        markPlayed(session);
+        const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        void playSplash(globe, { reduced, dataReady: globe.loaded });
       });
     </script>
   </body>
