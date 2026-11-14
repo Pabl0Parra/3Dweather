@@ -1,17 +1,18 @@
 // Mounts the globe: canvases, data loading, view state and the draw loop.
-import { landGridFrom, sampleWave, type LandGrid } from "./field";
+import { flowVector, landGridFrom, sampleLayer, type Frames, type LandGrid } from "./field";
 import { flowSteps, particleCount, Particles, spawnOnDisk } from "./particles";
-import { FrameStore, RETRY_DELAYS_MS, LOAD_NOTICE } from "./frames";
+import { LayerFrames, RETRY_DELAYS_MS, LOAD_NOTICE } from "./frames";
 import { attachGestures } from "./gestures";
 import { formatHash, parseHash } from "./hash";
 import { drawOverlay } from "./overlay";
 import { initialHour, mountTimeline, type TimelineHandle } from "./timeline";
-import { biggestWave, FLY_MS, FLY_ZOOM, flyView } from "./fly";
-import { formatCoord, Probe, readoutLines } from "./probe";
+import { biggestWave, FLY_MS, FLY_ZOOM, flyView, peakAt } from "./fly";
+import { LAYERS, type Layer, type LayerId } from "./layers";
+import { formatCoord, Probe, readoutFor } from "./probe";
 import type { Intro } from "../splash/intro";
 import { mountLegend } from "./ui";
 import { loadUnits, mountUnitsMenu, type Units } from "./units";
-import { framePair, loadLatest, loadManifest, type GlobeManifest } from "./manifest";
+import { loadLatest, loadManifest, type GlobeManifest, type Latest } from "./manifest";
 import { GlobeRenderer } from "./renderer";
 import { clampView, project, radiusPx, unproject, type View } from "./view";
 
@@ -24,8 +25,11 @@ export type GlobeHandle = {
   setHour(h: number): Promise<void>;
   /** Splash inputs; null = normal drawing. */
   setIntro(i: Intro | null): void;
-  /** Run time and grid cell count once the manifest has loaded. */
-  info(): { run: string; cells: number } | null;
+  /** The layer on show, and switching to another (frames reload; the view and hour stay). */
+  layer(): LayerId;
+  setLayer(id: LayerId): Promise<void>;
+  /** Run time, grid cell count and the layer's model once the manifest has loaded. */
+  info(): { run: string; cells: number; model: string } | null;
   /** Resolves when the first forecast frame is on the globe. */
   loaded: Promise<void>;
 };
@@ -59,7 +63,7 @@ async function withRetry<T>(load: () => Promise<T>, notice: (m: string | null) =
 
 export async function initGlobe(
   root: HTMLElement,
-  opts: { timeline?: HTMLElement; legend?: HTMLElement; unitsButton?: HTMLButtonElement; biggestButton?: HTMLButtonElement } = {},
+  opts: { layer?: LayerId; timeline?: HTMLElement; legend?: HTMLElement; unitsButton?: HTMLButtonElement; biggestButton?: HTMLButtonElement } = {},
 ): Promise<GlobeHandle | null> {
   const canvas = document.createElement("canvas");
   canvas.className = "globe-gl";
@@ -103,7 +107,7 @@ export async function initGlobe(
     root.replaceChildren();
     const msg = document.createElement("p");
     msg.className = "globe-fallback";
-    msg.textContent = "The wave map needs WebGL, which this browser or device isn't providing.";
+    msg.textContent = "This map needs WebGL, which this browser or device isn't providing.";
     root.append(msg);
     return null;
   }
@@ -114,10 +118,13 @@ export async function initGlobe(
   let landReady = false;
   let dataReady = false;
   let manifest: GlobeManifest | null = null;
-  let store: FrameStore | null = null;
+  let latest: Latest | null = null;
+  let layer: Layer = LAYERS[opts.layer ?? "waves"];
+  renderer.setLayer(layer);
+  let store: LayerFrames | null = null;
   let shown = { a: -1, b: -1 };
   // CPU copies for particles, the probe and the peak search.
-  let pair: { a: Uint8ClampedArray; b: Uint8ClampedArray; mix: number } | null = null;
+  let frames: Frames | null = null;
   let land: LandGrid | null = null;
   const unitListeners: ((u: Units) => void)[] = [];
   let units: Units = opts.unitsButton
@@ -135,7 +142,9 @@ export async function initGlobe(
       intro = i;
       dirty = overlayDirty = flowStale = true;
     },
-    info: () => (info ? { ...info } : null),
+    layer: () => layer.id,
+    setLayer: (id) => switchLayer(id),
+    info: () => (info ? { ...info, model: layer.model } : null),
     loaded: Promise.resolve(),
   };
   let intro: Intro | null = null;
@@ -170,9 +179,9 @@ export async function initGlobe(
     if (!at) return;
     const { lat, lon } = at;
     let lines: string[];
-    if (land?.isLand(lat, lon)) lines = readoutLines(null, lat, lon, units);
-    else if (!pair || !manifest) lines = ["Forecast still loading…", formatCoord(lat, lon)];
-    else lines = readoutLines(sampleWave(pair.a, pair.b, pair.mix, manifest, lat, lon), lat, lon, units);
+    if (!layer.overLand && land?.isLand(lat, lon)) lines = readoutFor(layer, null, lat, lon, units);
+    else if (!frames || !manifest) lines = ["Forecast still loading…", formatCoord(lat, lon)];
+    else lines = readoutFor(layer, sampleLayer(layer, frames, manifest, lat, lon, hour), lat, lon, units);
     probe.show(lat, lon, lines);
   }
   function probeAt(lat: number, lon: number): void {
@@ -197,8 +206,11 @@ export async function initGlobe(
   }
   root.addEventListener("pointerdown", () => { cancelAnimationFrame(flight); flight = 0; });
   opts.biggestButton?.addEventListener("click", () => {
-    if (!pair || !manifest || !land) return;
-    const peak = biggestWave(pair.a, manifest, land);
+    if (!frames || !manifest || !land) return;
+    // Waves: scan the frame on show; other layers: the pipeline's hourly peak series.
+    const w = frames.w;
+    const peak = layer.id === "waves" && w ? biggestWave(w.mix < 0.5 ? w.a : w.b, manifest, land) : peakAt(manifest, layer.peak, hour);
+    if (!peak) return;
     flyTo({ lat0: peak.lat, lon0: peak.lon, zoom: FLY_ZOOM }, () => probeAt(peak.lat, peak.lon));
   });
 
@@ -237,10 +249,10 @@ export async function initGlobe(
     requestAnimationFrame(frame);
   };
 
-  function waveField(lat: number, lon: number) {
-    if (!pair || !manifest || !land || land.isLand(lat, lon)) return null;
-    const s = sampleWave(pair.a, pair.b, pair.mix, manifest, lat, lon);
-    return { u: s.u, v: s.v };
+  function flowField(lat: number, lon: number) {
+    if (!frames || !manifest || !land) return null;
+    if (layer.flow.seaOnly && land.isLand(lat, lon)) return null;
+    return flowVector(layer, frames, manifest, lat, lon);
   }
 
   function drawFlow(): void {
@@ -248,12 +260,12 @@ export async function initGlobe(
     const dpr = Math.min(coarse ? 1.25 : 2, window.devicePixelRatio || 1);
     const fw = Math.round(w * dpr), fh = Math.round(h * dpr);
     if (flow.width !== fw || flow.height !== fh) { flow.width = fw; flow.height = fh; flowStale = true; }
-    if (!pair || !land || !onScreen || document.hidden) return;
+    if (!frames || !land || !onScreen || document.hidden) return;
     if (reducedMotion && !flowStale) return;
     const dv = drawnView();
     const r = radiusPx(dv.zoom, w, h);
     const want = particleCount(Math.min(Math.PI * r * r, w * h), w);
-    const spawn = () => spawnOnDisk(dv, w, h, land, Math.random);
+    const spawn = () => spawnOnDisk(dv, w, h, layer.flow.seaOnly ? land : null, Math.random);
     const gone = (lat: number, lon: number) => {
       if (Math.abs(lat) > 88) return true;
       const p = project(dv, w, h, lat, lon);
@@ -262,7 +274,7 @@ export async function initGlobe(
     const fresh = particles.count !== want;
     if (fresh) particles.resize(want, spawn);
     // Reduced motion: still trails, pre-run once when spawned and redrawn only on change.
-    for (let k = flowSteps(reducedMotion, fresh); k > 0; k--) particles.step(waveField, spawn, gone);
+    for (let k = flowSteps(reducedMotion, fresh); k > 0; k--) particles.step(flowField, spawn, gone);
     flowStale = false;
     fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     fctx.clearRect(0, 0, w, h);
@@ -288,19 +300,18 @@ export async function initGlobe(
   async function applyHour(): Promise<void> {
     if (!manifest || !store) return;
     const seq = ++applySeq;
-    const fp = framePair(manifest, hour);
-    await store.ensure(fp.a, fp.b);
-    if (seq !== applySeq) return; // a newer hour has been asked for meanwhile
-    if (fp.a !== shown.a || fp.b !== shown.b) {
-      const a = store.pixels(fp.a), b = store.pixels(fp.b);
-      if (!a || !b) return;
-      renderer.setFrames(a, b, fp.mix);
-      shown = { a: fp.a, b: fp.b };
-      pair = { a, b, mix: fp.mix };
+    const got = await store.ensure(hour);
+    if (seq !== applySeq) return; // a newer hour or another layer has been asked for meanwhile
+    const p = got[layer.shade.family];
+    if (!p) return;
+    if (p.fa !== shown.a || p.fb !== shown.b) {
+      const veil = layer.id === "rain" && got.b ? { a: got.b.a, b: got.b.b } : undefined;
+      renderer.setFrames(p.a, p.b, p.mix, veil);
+      shown = { a: p.fa, b: p.fb };
     } else {
-      renderer.setMix(fp.mix);
-      if (pair) pair.mix = fp.mix;
+      renderer.setMix(p.mix);
     }
+    frames = got;
     dataReady = true;
     dirty = flowStale = true;
     refreshProbe();
@@ -324,25 +335,52 @@ export async function initGlobe(
   });
 
   async function load(): Promise<void> {
-    const latest = await withRetry(() => loadLatest(WX_BASE), showNotice);
-    manifest = await withRetry(() => loadManifest(WX_BASE, latest.dir), showNotice);
+    const lt = await withRetry(() => loadLatest(WX_BASE), showNotice);
+    manifest = await withRetry(() => loadManifest(WX_BASE, lt.dir), showNotice);
+    latest = lt;
     renderer.setGrid(manifest);
-    info = { run: latest.run, cells: manifest.w * manifest.h };
-    store = new FrameStore(WX_BASE, latest.dir, "w", manifest);
-    store.onError = showNotice;
+    info = { run: lt.run, cells: manifest.w * manifest.h };
+    store = openStore();
 
     const hours = manifest.hours;
-    hour = initialHour(latest.run, new Date(), hours);
+    hour = initialHour(lt.run, new Date(), hours);
     if (opts.timeline) {
-      timeline = mountTimeline(opts.timeline, { hours, runIso: latest.run, onHour: (h) => void setHour(h) });
+      timeline = mountTimeline(opts.timeline, { hours, runIso: lt.run, onHour: (h) => void setHour(h) });
       timeline.setHour(hour);
       // Autoplay unless reduced motion; playback holds while the globe is off screen.
       const t = timeline;
       new IntersectionObserver(([e]) => t.setSuspended(!e.isIntersecting)).observe(root);
       t.setPlaying(!window.matchMedia("(prefers-reduced-motion: reduce)").matches);
     }
-    const setLegendUnit = opts.legend ? mountLegend(opts.legend, units.length) : null;
-    unitListeners.push((u) => setLegendUnit?.(u.length));
+    showLegend();
+    unitListeners.push((u) => setLegendUnits?.(u));
+    await applyHour();
+  }
+
+  let setLegendUnits: ((u: Units) => void) | null = null;
+  function showLegend(): void {
+    setLegendUnits = opts.legend ? mountLegend(opts.legend, layer, units) : null;
+  }
+
+  function openStore(): LayerFrames {
+    const s = new LayerFrames(WX_BASE, latest!.dir, manifest!, layer.families);
+    s.onError = showNotice;
+    return s;
+  }
+
+  async function switchLayer(id: LayerId): Promise<void> {
+    if (id === layer.id) return;
+    layer = LAYERS[id];
+    renderer.setLayer(layer);
+    shown = { a: -1, b: -1 };
+    frames = null;
+    applySeq++; // drop frames still arriving for the previous layer
+    particles.resize(0, () => [0, 0]);
+    dirty = flowStale = true;
+    probe.hide();
+    if (!manifest || !latest) return; // load() opens the store with the new layer
+    store = openStore();
+    showLegend();
     await applyHour();
   }
   // The first failure rejects `loaded` (the splash stops waiting); loading itself keeps retrying.

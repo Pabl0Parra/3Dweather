@@ -1,7 +1,7 @@
 // WebGL globe: one full-screen triangle, the fragment shader inverse-projects
-// every pixel and composes sea, land, the wave layer and the limb glow.
+// every pixel and composes sea, land, the data layer and the limb glow.
+import { rampTable, type Layer } from "./layers";
 import type { GlobeManifest } from "./manifest";
-import { rampTable } from "./ramp";
 import { radiusPx, type View } from "./view";
 
 const VERT = `
@@ -16,21 +16,28 @@ uniform float uRadius;      // device px
 uniform float uLat0, uLon0; // radians
 uniform vec4 uGrid;         // west, dlon, north, dlat (degrees)
 uniform vec2 uGridSize;     // cells
-uniform sampler2D uFrameA, uFrameB, uLand, uRamp;
+uniform sampler2D uFrameA, uFrameB, uLand, uRamp, uVeilA, uVeilB;
 uniform float uMix, uHasData;
 uniform float uBody;        // intro: globe body and limb fade in
+uniform float uKind;        // 0: one byte indexes the ramp; 1: speed of a two-channel vector
+uniform vec4 uMaskA, uMaskB; // channel selectors (scalar / vector x, vector y)
+uniform float uVecScale;    // m/s for a full-scale vector byte
+uniform float uVecMax;      // speed at the top of the ramp
+uniform float uOverLand;    // 1: the layer is drawn over land too
+uniform float uHasVeil;     // 1: cloud veil from the second frame pair (R channel)
 
 const float PI = 3.141592653589793;
 const vec3 SEA = vec3(8.0, 26.0, 46.0) / 255.0;
 const vec3 LAND = vec3(27.0, 38.0, 54.0) / 255.0;
 const vec3 GLOW = vec3(63.0, 224.0, 255.0) / 255.0;
+const vec3 CLOUD = vec3(222.0, 230.0, 240.0) / 255.0;
 
-float cell(sampler2D t, float x, float y) {
-  return texture2D(t, vec2((x + 0.5) / uGridSize.x, (y + 0.5) / uGridSize.y)).r;
+vec4 cell(sampler2D t, float x, float y) {
+  return texture2D(t, vec2((x + 0.5) / uGridSize.x, (y + 0.5) / uGridSize.y));
 }
 
-// Bilinear on the height byte with the x index wrapped, so +-180 has no seam.
-float height(sampler2D t, float lat, float lon) {
+// Bilinear on the raw bytes with the x index wrapped, so +-180 has no seam.
+vec4 sample4(sampler2D t, float lat, float lon) {
   float fx = (lon - uGrid.x) / uGrid.y;
   float fy = clamp((uGrid.z - lat) / uGrid.w, 0.0, uGridSize.y - 1.0);
   float x0 = floor(fx), y0 = floor(fy);
@@ -59,19 +66,35 @@ void main() {
   float latD = lat * 180.0 / PI;
   float lonD = mod(lon * 180.0 / PI + 180.0, 360.0) - 180.0;
 
-  float land = texture2D(uLand, vec2((lonD + 180.0) / 360.0, (90.0 - latD) / 180.0)).r;
-  vec3 col = SEA;
-  if (uHasData > 0.5) {
-    float h = mix(height(uFrameA, latD, lonD), height(uFrameB, latD, lonD), uMix);
-    vec4 w = texture2D(uRamp, vec2((h * 255.0 + 0.5) / 256.0, 0.5));
-    col = mix(SEA, w.rgb, w.a);
+  float land = step(0.5, texture2D(uLand, vec2((lonD + 180.0) / 360.0, (90.0 - latD) / 180.0)).r);
+  vec3 col = mix(SEA, LAND, land);
+  if (uHasData > 0.5 && (land < 0.5 || uOverLand > 0.5)) {
+    if (uHasVeil > 0.5) {
+      float cloud = mix(sample4(uVeilA, latD, lonD).r, sample4(uVeilB, latD, lonD).r, uMix);
+      col = mix(col, CLOUD, cloud * 0.55);
+    }
+    vec4 f = mix(sample4(uFrameA, latD, lonD), sample4(uFrameB, latD, lonD), uMix);
+    float idx = dot(f, uMaskA);
+    if (uKind > 0.5) {
+      vec2 vel = (vec2(dot(f, uMaskA), dot(f, uMaskB)) * 255.0 - 128.0) / 127.0 * uVecScale;
+      idx = sqrt(clamp(length(vel) / uVecMax, 0.0, 1.0));
+    }
+    vec4 w = texture2D(uRamp, vec2((idx * 255.0 + 0.5) / 256.0, 0.5));
+    col = mix(col, w.rgb, w.a);
+    col = mix(col, LAND, land * 0.25); // keep coasts readable under layers drawn over land
   }
-  col = mix(col, LAND, step(0.5, land));
   float shade = 0.72 + 0.28 * cc;            // gentle darkening towards the limb
   float rim = smoothstep(0.86, 1.0, rho) * 0.35;
   gl_FragColor = vec4((col * shade + GLOW * rim) * uBody, uBody);
 }
 `;
+
+type TexKey = "a" | "b" | "land" | "ramp" | "va" | "vb";
+type Vec4 = [number, number, number, number];
+const mask = (ch: number): Vec4 => [0, 1, 2, 3].map((i) => (i === ch ? 1 : 0)) as Vec4;
+
+/** Full-scale byte speed (m/s) of each vector family: wind (b-128)*50/127, currents (b-128)/127*2.5. */
+const VEC_SCALE: Partial<Record<string, number>> = { a: 50, c: 2.5 };
 
 function compile(gl: WebGLRenderingContext, type: number, src: string): WebGLShader {
   const s = gl.createShader(type)!;
@@ -85,9 +108,11 @@ export class GlobeRenderer {
   private gl: WebGLRenderingContext;
   private prog: WebGLProgram;
   private u: Record<string, WebGLUniformLocation | null> = {};
-  private tex: Record<"a" | "b" | "land" | "ramp", WebGLTexture>;
+  private tex: Record<TexKey, WebGLTexture>;
   private mix = 0;
   private hasData = false;
+  private veil = false;
+  private layer: Layer | null = null;
   private grid: GlobeManifest | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -104,7 +129,8 @@ export class GlobeRenderer {
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) ?? "link error");
     this.prog = prog;
     gl.useProgram(prog);
-    for (const n of ["uCentre", "uRadius", "uLat0", "uLon0", "uGrid", "uGridSize", "uFrameA", "uFrameB", "uLand", "uRamp", "uMix", "uHasData", "uBody"])
+    for (const n of ["uCentre", "uRadius", "uLat0", "uLon0", "uGrid", "uGridSize", "uFrameA", "uFrameB", "uLand", "uRamp",
+      "uVeilA", "uVeilB", "uMix", "uHasData", "uBody", "uKind", "uMaskA", "uMaskB", "uVecScale", "uVecMax", "uOverLand", "uHasVeil"])
       this.u[n] = gl.getUniformLocation(prog, n);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -118,16 +144,20 @@ export class GlobeRenderer {
       a: this.texture(1, 1, empty, gl.NEAREST, gl.CLAMP_TO_EDGE),
       b: this.texture(1, 1, empty, gl.NEAREST, gl.CLAMP_TO_EDGE),
       land: this.texture(1, 1, empty, gl.LINEAR, gl.CLAMP_TO_EDGE),
-      ramp: this.texture(256, 1, rampTable(), gl.LINEAR, gl.CLAMP_TO_EDGE),
+      ramp: this.texture(256, 1, new Uint8Array(1024), gl.LINEAR, gl.CLAMP_TO_EDGE),
+      va: this.texture(1, 1, empty, gl.NEAREST, gl.CLAMP_TO_EDGE),
+      vb: this.texture(1, 1, empty, gl.NEAREST, gl.CLAMP_TO_EDGE),
     };
-    [this.tex.a, this.tex.b, this.tex.land, this.tex.ramp].forEach((t, i) => {
+    (["a", "b", "land", "ramp", "va", "vb"] as TexKey[]).forEach((k, i) => {
       gl.activeTexture(gl.TEXTURE0 + i);
-      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.bindTexture(gl.TEXTURE_2D, this.tex[k]);
     });
     gl.uniform1i(this.u.uFrameA, 0);
     gl.uniform1i(this.u.uFrameB, 1);
     gl.uniform1i(this.u.uLand, 2);
     gl.uniform1i(this.u.uRamp, 3);
+    gl.uniform1i(this.u.uVeilA, 4);
+    gl.uniform1i(this.u.uVeilB, 5);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   }
@@ -135,7 +165,7 @@ export class GlobeRenderer {
   private texture(w: number, h: number, data: ArrayBufferView | TexImageSource, filter: number, wrap: number): WebGLTexture {
     const gl = this.gl;
     const t = gl.createTexture()!;
-    // Upload on a scratch unit so the samplers bound to units 0-3 stay put.
+    // Upload on a scratch unit so the samplers bound to units 0-5 stay put.
     gl.activeTexture(gl.TEXTURE7);
     gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
@@ -150,7 +180,7 @@ export class GlobeRenderer {
     return t;
   }
 
-  private replace(unit: number, key: "a" | "b" | "land", t: WebGLTexture): void {
+  private replace(unit: number, key: TexKey, t: WebGLTexture): void {
     const gl = this.gl;
     gl.deleteTexture(this.tex[key]);
     this.tex[key] = t;
@@ -167,11 +197,24 @@ export class GlobeRenderer {
     this.replace(2, "land", this.texture(img.width, img.height, img, this.gl.LINEAR, this.gl.REPEAT));
   }
 
-  setFrames(a: Uint8ClampedArray, b: Uint8ClampedArray, mix: number): void {
+  /** The layer to draw: its ramp and how its bytes become a colour. Data stays hidden until setFrames. */
+  setLayer(l: Layer): void {
+    this.layer = l;
+    this.hasData = false;
+    this.veil = false;
+    this.replace(3, "ramp", this.texture(256, 1, rampTable(l), this.gl.LINEAR, this.gl.CLAMP_TO_EDGE));
+  }
+
+  setFrames(a: Uint8ClampedArray, b: Uint8ClampedArray, mix: number, veil?: { a: Uint8ClampedArray; b: Uint8ClampedArray }): void {
     if (!this.grid) throw new Error("setGrid first");
     const { w, h } = this.grid, gl = this.gl;
     this.replace(0, "a", this.texture(w, h, a, gl.NEAREST, gl.CLAMP_TO_EDGE));
     this.replace(1, "b", this.texture(w, h, b, gl.NEAREST, gl.CLAMP_TO_EDGE));
+    if (veil) {
+      this.replace(4, "va", this.texture(w, h, veil.a, gl.NEAREST, gl.CLAMP_TO_EDGE));
+      this.replace(5, "vb", this.texture(w, h, veil.b, gl.NEAREST, gl.CLAMP_TO_EDGE));
+    }
+    this.veil = !!veil;
     this.mix = mix;
     this.hasData = true;
   }
@@ -200,6 +243,22 @@ export class GlobeRenderer {
     gl.uniform1f(this.u.uMix, this.mix);
     gl.uniform1f(this.u.uHasData, this.hasData ? 1 : 0);
     gl.uniform1f(this.u.uBody, this.body);
+    const l = this.layer;
+    if (l?.shade.kind === "vector") {
+      gl.uniform1f(this.u.uKind, 1);
+      gl.uniform4fv(this.u.uMaskA, mask(l.shade.channels[0]));
+      gl.uniform4fv(this.u.uMaskB, mask(l.shade.channels[1]));
+      gl.uniform1f(this.u.uVecScale, VEC_SCALE[l.shade.family] ?? 1);
+      gl.uniform1f(this.u.uVecMax, l.vecMax ?? 1);
+    } else {
+      gl.uniform1f(this.u.uKind, 0);
+      gl.uniform4fv(this.u.uMaskA, mask(l?.shade.channel ?? 0));
+      gl.uniform4fv(this.u.uMaskB, mask(1));
+      gl.uniform1f(this.u.uVecScale, 1);
+      gl.uniform1f(this.u.uVecMax, 1);
+    }
+    gl.uniform1f(this.u.uOverLand, l?.overLand ? 1 : 0);
+    gl.uniform1f(this.u.uHasVeil, this.veil ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 }
