@@ -16,6 +16,7 @@ from .ocean import CURRENT_EVERY, CURRENT_FRAMES, ocean_frame, ocean_time, pack_
 from .peaks import hourly, peak
 from .regrid import regrid
 from .sources.openmeteo import OpenMeteoRun, RunIncomplete, resolve_daily_run
+from .static_assets import ice_mask
 from .sprites import CHUNKS, COLS, EVERY, FRAMES, HOURS, chunk_frames, pack_chunk, save_sprite
 from .storms import frame_s, storm_index
 from .waves import frame_time, wave_frame, wave_peak
@@ -113,11 +114,14 @@ def _atmosphere(s: RunSources, precip: _GfsPrecip, run: datetime, t: datetime) -
             "rain": rain_rate(precip, t)}
 
 
-def build_run(run: datetime, cache_dir: Path, out_dir: Path, sources: RunSources | None = None) -> Path:
+def build_run(run: datetime, cache_dir: Path, out_dir: Path, sources: RunSources | None = None,
+              ice: np.ndarray | None = None) -> Path:
     """Write out_dir/<YYYYMMDDHH>/ with globe-{a,b,t,s,w}0..6.webp, globe-c.webp and globe.json.
     Nothing is written unless the whole run is available; the folder appears only when complete."""
     s = sources or open_sources(run, cache_dir)
     _check_complete(s, run)
+    if ice is None:  # Natural Earth glaciated areas, cached next to the model inputs
+        ice = ice_mask(Path(cache_dir) / "naturalearth")
     final = Path(out_dir) / run.strftime("%Y%m%d%H")
     tmp = final.with_name(final.name + ".tmp")
     shutil.rmtree(tmp, ignore_errors=True)
@@ -143,7 +147,7 @@ def build_run(run: datetime, cache_dir: Path, out_dir: Path, sources: RunSources
                 peaks["wind"].append(peak(np.hypot(f["u"], f["v"])))
                 peaks["rain"].append(peak(rain))
                 peaks["hot"].append(peak(f["temp"]))
-                peaks["cold"].append(peak(f["temp"], mode="min"))
+                peaks["cold"].append(peak(f["temp"], mode="min", exclude=ice))
                 peaks["low"].append(peak(f["pressure"], mode="min"))
                 if f["gust"] is not None:
                     peaks["gust"].append(peak(f["gust"]))
@@ -157,8 +161,10 @@ def build_run(run: datetime, cache_dir: Path, out_dir: Path, sources: RunSources
             sst = s.sst.field("sea_surface_temperature", t)
             ocean.append(ocean_frame(u, v, sst, s.cur.source_grid))
             gu, gv = (regrid(a, s.cur.source_grid, GLOBE) for a in (u, v))
-            current.append(peak(np.hypot(gu, gv)))
-            sea_hot.append(peak(regrid(sst, s.sst.source_grid, GLOBE)))
+            # Ocean peaks only count open sea: cells whose source neighbours are all sea.
+            coastal = regrid(np.isfinite(sst).astype(np.float32), s.sst.source_grid, GLOBE) <= 0.999
+            current.append(peak(np.hypot(gu, gv), exclude=coastal))
+            sea_hot.append(peak(regrid(sst, s.sst.source_grid, GLOBE), exclude=coastal))
         save_sprite(pack_ocean(ocean), tmp / "globe-c.webp")
 
         manifest = {

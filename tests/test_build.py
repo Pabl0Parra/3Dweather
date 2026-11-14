@@ -16,6 +16,7 @@ from pipeline.waves import wave_peak
 RUN = datetime(2026, 11, 13, 6, tzinfo=timezone.utc)
 SG = SourceGrid(lat0=-90.0, lon0=-180.0, dlat=2.0, dlon=2.0)  # small grids keep the tests fast
 SHAPE = (91, 180)
+NO_ICE = np.zeros((384, 768), bool)
 H = timedelta(hours=1)
 
 
@@ -84,7 +85,7 @@ def fake_sources(wave_frames=57, gfs_frames=57, ifs_hours=168):
 @pytest.fixture(scope="module")
 def built(tmp_path_factory):
     out = tmp_path_factory.mktemp("out")
-    return build_run(RUN, out / "cache", out / "wx", sources=fake_sources())
+    return build_run(RUN, out / "cache", out / "wx", sources=fake_sources(), ice=NO_ICE)
 
 
 def test_writes_every_family(built):
@@ -126,20 +127,20 @@ def test_gust_stops_after_hour_84(built):
 
 
 def test_ifs_gap_falls_back_to_gfs_pressure(tmp_path):
-    out = build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=fake_sources(ifs_hours=138))
+    out = build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=fake_sources(ifs_hours=138), ice=NO_ICE)
     last = unpack_frame(Image.open(out / "globe-b6.webp"), 8)  # hour 168, past IFS
     assert (last[..., 1] == encode_pressure(np.array([1000.0]))[0]).all()
 
 
 def test_missing_gfs_frame_refuses_to_build(tmp_path):
     with pytest.raises(RunIncomplete):
-        build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=fake_sources(gfs_frames=50))
+        build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=fake_sources(gfs_frames=50), ice=NO_ICE)
     assert not (tmp_path / "wx").exists() or list((tmp_path / "wx").iterdir()) == []
 
 
 def test_missing_wave_frame_refuses_to_build(tmp_path):
     with pytest.raises(RunIncomplete):
-        build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=fake_sources(wave_frames=56))
+        build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=fake_sources(wave_frames=56), ice=NO_ICE)
 
 
 def test_cli_exit_codes(tmp_path, monkeypatch, capsys):
@@ -162,12 +163,12 @@ def test_failure_midway_leaves_no_output(tmp_path):
 
     src.gfs.field = flaky
     with pytest.raises(OSError):
-        build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=src)
+        build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=src, ice=NO_ICE)
     assert list((tmp_path / "wx").iterdir()) == []
 
 
 def test_swap_failure_restores_the_existing_run(tmp_path, monkeypatch):
-    out = build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=fake_sources())
+    out = build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=fake_sources(), ice=NO_ICE)
     (out / "marker").write_text("old")
     import pipeline.build as b
     real = b.Path.rename
@@ -179,7 +180,7 @@ def test_swap_failure_restores_the_existing_run(tmp_path, monkeypatch):
 
     monkeypatch.setattr(b.Path, "rename", flaky)
     with pytest.raises(PermissionError):
-        build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=fake_sources())
+        build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=fake_sources(), ice=NO_ICE)
     assert (out / "marker").read_text() == "old" and (out / "globe-w0.webp").exists()
 
 

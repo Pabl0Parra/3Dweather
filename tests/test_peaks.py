@@ -31,3 +31,11 @@ def test_peak_reports_true_value_beyond_byte_scale():
 
 def test_all_missing_is_zero():
     assert peak(np.full((GLOBE.h, GLOBE.w), np.nan, np.float32)) == [0.0, 0.0, 0.0]
+
+
+def test_masked_cells_are_left_out():
+    a = np.zeros((GLOBE.h, GLOBE.w), np.float32)
+    a[10, 10], a[200, 300] = -50.0, -30.0
+    mask = np.zeros_like(a, dtype=bool)
+    mask[10, 10] = True
+    assert peak(a, mode="min", exclude=mask)[0] == -30.0

@@ -6,9 +6,11 @@ import numpy as np
 from .grid import GLOBE
 
 
-def peak(field: np.ndarray, mode: str = "max") -> list[float]:
+def peak(field: np.ndarray, mode: str = "max", exclude: np.ndarray | None = None) -> list[float]:
     """[value (1 dp), lat (2 dp), lon (2 dp)] of the extreme globe cell, taken
-    before byte rounding and land fill; all-missing gives [0, 0, 0]."""
+    before byte rounding and land fill; cells in `exclude` are skipped; all-missing gives [0, 0, 0]."""
+    if exclude is not None:
+        field = np.where(exclude, np.nan, field)
     if not np.isfinite(field).any():
         return [0.0, 0.0, 0.0]
     i = np.nanargmax(field) if mode == "max" else np.nanargmin(field)

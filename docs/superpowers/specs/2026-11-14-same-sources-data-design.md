@@ -272,10 +272,11 @@ These cannot be matched from outside; each is our own rule, documented as such.
 
 | Item | What we know | Our approach |
 |---|---|---|
-| Thunderstorm index | 0-255 per cell, mostly tropical, 78 % overlap with rain; formula unpublished | Scaled CAPE gated by precipitation, tuned against the captured frame |
-| Daily currents frame | One frame per day; snapshot or mean unknown | Daily mean; compare both against the captured frame and keep the closer |
+| Thunderstorm index | 0-255 per cell, mostly tropical, 78 % overlap with rain; formula unpublished | `0.1·CAPE^0.75`, scaled by rain up to 3 mm/h, zero where the lifted index is positive (GFS 0.25°). Storm cells overlap the reference's by 38 % (phase 3a) |
+| Daily currents frame | One frame per day; snapshot or mean unknown | Snapshot at T+24k h (measured in phase 3a: snapshot 0.04 byte levels, daily mean about 3) |
+| Cloud | Byte scale and source unpublished; GFS total cloud cover is 45 byte levels off | Ours: max(low, mid) + 0.3·high·(1 − max/100) from GFS 13 km, linear byte; about 17 byte levels off. The readout's cloud % is this blend |
 | Wave period and direction | Inferred to be GFS-Wave primary period and direction | Use those; confirm in the reference test |
-| GFS grid for the globe | 13 km or 0.25° unknown; resampled to 0.47° either way | 13 km |
+| GFS grid for the globe | 13 km or 0.25° unknown; resampled to 0.47° either way | 13 km, averaged over the 4×4 source cells in each globe cell (matches exactly) |
 | Station wave data | Reference uses Open-Meteo's multi-model marine blend | GFS-Wave only, same as the globe |
 | Catalogue selection | GeoNames feature classes and coast-distance cut-offs unpublished | Our own rule, tuned to land near the reference counts |
 | Tidal coefficient | From the ephemeris, formula unpublished | Standard French formula; check against captured values |
@@ -311,6 +312,26 @@ These cannot be matched from outside; each is our own rule, documented as such.
     mask hides most of this, so it is left for the globe phase to judge by eye.
   - GFS has no cloud cover or rain at the analysis hour (hour 0), which
     explains the empty cloud channel in the reference's first frame.
+- **Phase 3a results (2026-11-14, every other layer).** Same run, frames 0-7
+  of chunk 0 and all 8 daily ocean frames. Mean absolute byte difference:
+  - Wind u and v, air temperature: 0.00. The globe cell is exactly 4×4 GFS 13 km
+    cells, and the reference averages them (bilinear sampling was 0.2-0.3 off).
+  - Rain: 0.03 (frames 1-7). The rule is the mean rate over the hour before and the
+    hour after the frame, with a missing hour left out, 4×4 averaged, then smoothed
+    with a separable [1, 4, 1]/6 kernel. Steps are weighted by overlap, so the
+    3-hourly part past 120 h uses the same rule.
+  - Pressure: 0.11 (IFS, which stores pressure in Pa). Gust: 0.9 (IFS).
+  - Current u/v and sea temperature: 0.03-0.04 over open sea, as snapshots.
+  - Cloud: about 17, our own rule (section 8). Storms: 38 % overlap, our own rule.
+  - Peaks: wind, hot, current and cold agree at every hour. Cold leaves out Natural
+    Earth glaciated areas, which matched every hour exactly. Sea temperature
+    values agree every hour; it is taken over open sea only, and where two spots
+    tie the cell can differ. Gusts are within a median of 1.2 m/s. Low pressure
+    agrees for hours 0-138; past 138 h it comes from our GFS filler, and the
+    reference's filler gives lower values there (up to 14 hPa), so its filler
+    is still unknown. Rain agrees except at hours 72-119, where neither the
+    hourly nor a 3-hourly reading reproduces the reference; the inputs were
+    saved a day after the reference built the run.
 - **Tide test.** New York City, November 2026: our high and low waters against
   the captured station data, within 2 minutes and 2 cm. The reference site's
   own FES-vs-NOAA comparison gives the expected error for FES stations.

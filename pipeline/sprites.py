@@ -13,8 +13,10 @@ HOURS = 168
 FRAMES = 57
 COLS = 4
 CHUNKS = [8, 8, 8, 8, 8, 8, 9]
-# Encoder effort (0-6). Lossless either way, so the bytes are identical; 6 gives the smallest files.
-WEBP_METHOD = 6
+# Encoder effort. Lossless either way, so the decoded bytes are identical. Method 4 at
+# quality 50 is ~27x faster than 6/100 for ~1 % larger files (measured on globe-a0).
+WEBP_METHOD = 4
+WEBP_QUALITY = 50
 
 
 def chunk_frames(chunk: int) -> range:
@@ -36,7 +38,7 @@ def pack_chunk(frames: list[np.ndarray]) -> Image.Image:
 def save_sprite(img: Image.Image, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     part = path.with_name(path.name + ".part")
-    img.save(part, format="WEBP", lossless=True, quality=100, method=WEBP_METHOD, exact=True)
+    img.save(part, format="WEBP", lossless=True, quality=WEBP_QUALITY, method=WEBP_METHOD, exact=True)
     part.replace(path)
 
 

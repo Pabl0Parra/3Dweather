@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Callable
 
+import numpy as np
 from PIL import Image, ImageDraw
 
 from .sources.openmeteo import http_fetch
@@ -12,6 +13,7 @@ from .sources.openmeteo import http_fetch
 NATURAL_EARTH = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson"
 LAND = "ne_50m_land.geojson"
 COAST = "ne_50m_coastline.geojson"
+GLACIATED = "ne_50m_glaciated_areas.geojson"
 SOURCE = "Natural Earth 1:50m v5.1.2 (public domain)"
 
 
@@ -79,3 +81,11 @@ def build_static(cache_dir: Path, out_dir: Path, fetch: Callable[[str, Path], No
     coast.with_name(coast.name + ".part").write_text(
         json.dumps({"source": SOURCE, "lines": coast_lines(_load(COAST, cache_dir, fetch))}, separators=(",", ":")))
     coast.with_name(coast.name + ".part").replace(coast)
+
+
+def ice_mask(cache_dir: Path, fetch: Callable[[str, Path], None] = http_fetch) -> np.ndarray:
+    """Globe cells (384 x 768, bool) covered by glaciers and ice sheets. The reference's
+    "coldest place" leaves these out (matched at every hour of run 2026111306)."""
+    from .grid import GLOBE
+    img = rasterize_land(_load(GLACIATED, Path(cache_dir), fetch), GLOBE.w, GLOBE.h)
+    return np.asarray(img) >= 128

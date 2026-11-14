@@ -64,3 +64,14 @@ def test_build_static_writes_both_files(tmp_path):
                for u in calls)
     build_static(tmp_path / "cache", tmp_path / "out", fetch=fetch)  # second run uses the cache
     assert len(calls) == 2
+
+
+def test_ice_mask_on_the_globe_grid(tmp_path):
+    from pipeline.static_assets import GLACIATED, ice_mask
+    square = {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {}, "geometry": {
+        "type": "Polygon", "coordinates": [[[-50, 60], [-30, 60], [-30, 80], [-50, 80], [-50, 60]]]}}]}
+    (tmp_path / GLACIATED).write_text(__import__("json").dumps(square), encoding="utf-8")
+    m = ice_mask(tmp_path, fetch=lambda url, dest: (_ for _ in ()).throw(AssertionError("no fetch")))
+    assert m.shape == (384, 768) and m.dtype == bool
+    from pipeline.grid import GLOBE
+    assert m[GLOBE.cell_of(70, -40)] and not m[GLOBE.cell_of(70, 0)]
