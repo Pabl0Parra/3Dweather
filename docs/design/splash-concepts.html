@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3Dweather splash concepts</title>
+<style>
+  :root { --bg:#03060d; --cyan:#3fe0ff; --hot:#ff4fa3; --dim:#7f93b3; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:#dbe8ff;
+    font-family: ui-sans-serif, system-ui, "Segoe UI", sans-serif; overflow:hidden; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; }
+  #bar { position:fixed; top:0; left:0; right:0; z-index:5; display:flex; gap:8px; align-items:center;
+    padding:10px 14px; background:rgba(3,6,13,.82); border-bottom:1px solid #16233a; flex-wrap:wrap; }
+  #bar .title { font-size:13px; color:var(--dim); margin-right:8px; }
+  button { font:inherit; font-size:13px; color:#dbe8ff; background:#0b1424; border:1px solid #223556;
+    padding:7px 12px; border-radius:6px; cursor:pointer; }
+  button:hover { border-color:var(--cyan); }
+  button.on { background:#0f2a3d; border-color:var(--cyan); color:#fff; }
+  button.pick { margin-left:auto; border-color:var(--hot); }
+  button.pick.selected { background:var(--hot); color:#12030a; }
+  #stage { position:fixed; inset:49px 0 0 0; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  #hud { position:absolute; left:28px; top:24px; font-size:12px; line-height:1.7; letter-spacing:.08em;
+    color:var(--cyan); text-shadow:0 0 12px rgba(63,224,255,.5); white-space:pre; opacity:0; }
+  #word { position:absolute; left:0; right:0; text-align:center; bottom:17%; font-size:clamp(26px,5.2vw,64px);
+    font-weight:600; letter-spacing:.42em; padding-left:.42em; color:#fff; opacity:0;
+    text-shadow:0 0 28px rgba(63,224,255,.65), 0 0 2px #fff; }
+  #word b { color:var(--cyan); font-weight:600; }
+  #tag { position:absolute; left:0; right:0; text-align:center; bottom:calc(17% - 30px); font-size:12px;
+    letter-spacing:.3em; color:var(--dim); opacity:0; }
+  #controls { position:absolute; left:50%; bottom:22px; transform:translateX(-50%) translateY(30px); opacity:0;
+    display:flex; gap:10px; align-items:center; padding:9px 14px; border:1px solid #1d3352; border-radius:10px;
+    background:rgba(8,16,30,.8); font-size:11px; letter-spacing:.1em; color:var(--dim); }
+  #controls .chip { padding:4px 9px; border:1px solid #223556; border-radius:5px; }
+  #controls .chip.live { color:var(--cyan); border-color:var(--cyan); }
+  #controls .track { width:min(34vw,300px); height:3px; background:#1b2b47; border-radius:2px; position:relative; }
+  #controls .track i { position:absolute; left:0; top:0; bottom:0; width:12%; background:var(--cyan); border-radius:2px; }
+  #note { position:absolute; right:22px; top:22px; max-width:300px; font-size:12px; line-height:1.5; color:var(--dim);
+    text-align:right; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <span class="title">Splash concepts — which one?</span>
+  <button data-tab="0" class="on">1 · Ignition</button>
+  <button data-tab="1">2 · Sonar</button>
+  <button data-tab="2">3 · Tideline</button>
+  <button id="replay">↻ Replay</button>
+  <button id="pick" class="pick" data-choice="ignition">Pick this one</button>
+</div>
+<div id="stage">
+  <canvas id="c"></canvas>
+  <div id="hud" class="mono"></div>
+  <div id="word"></div>
+  <div id="tag" class="mono">LIVE EARTH · WIND · WAVES · TIDES</div>
+  <div id="controls" class="mono">
+    <span class="chip live">WAVES</span><span class="chip">WIND</span><span class="chip">RAIN</span>
+    <span class="chip">TIDE</span><span>▶</span><span class="track"><i></i></span><span>NOW +12 H</span>
+  </div>
+  <div id="note"></div>
+</div>
+
+<script type="module">
+// Rough mockups for choosing a direction. Motion (motion.dev) drives the timelines.
+let animate;
+try { ({ animate } = await import("https://cdn.jsdelivr.net/npm/motion@11.11.13/+esm")); }
+catch { // offline fallback so the mockup still plays
+  animate = (from, to, o) => { let stop = false; const t0 = performance.now();
+    (function f(n){ if (stop) return; const p = Math.min(1, (n - t0) / (o.duration * 1000));
+      o.onUpdate(from + (to - from) * p); if (p < 1) requestAnimationFrame(f); })(t0);
+    return { stop(){ stop = true; } }; };
+}
+let rings = [];
+try {
+  const topo = await import("https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/+esm");
+  const world = await (await fetch("https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/land-110m.json")).json();
+  const land = topo.feature(world, world.objects.land);
+  for (const f of (land.features || [land])) {
+    const polys = f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates;
+    for (const p of polys) for (const r of p) rings.push(r);
+  }
+} catch { /* graticule only */ }
+
+const D = Math.PI / 180, TILT = 18 * D, TAU = Math.PI * 2;
+const stage = document.getElementById("stage"), cv = document.getElementById("c"), g = cv.getContext("2d");
+const hud = document.getElementById("hud"), word = document.getElementById("word"), tag = document.getElementById("tag");
+const controls = document.getElementById("controls"), note = document.getElementById("note"), pick = document.getElementById("pick");
+let W, H, R, cx, cy;
+function resize() {
+  const dpr = Math.min(2, devicePixelRatio || 1), r = stage.getBoundingClientRect();
+  W = r.width; H = r.height; cv.width = W * dpr; cv.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cx = W / 2; cy = H * 0.44; R = Math.min(W, H) * 0.3;
+}
+addEventListener("resize", resize); resize();
+
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eOut = p => 1 - Math.pow(1 - p, 3);
+const eIO = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const lerp = (a, b, p) => a + (b - a) * p;
+
+function proj(lon, lat, rot, s = 1) {
+  const l = (lon + rot) * D, p = lat * D, cl = Math.cos(p);
+  const x = cl * Math.sin(l), y = Math.sin(p), z = cl * Math.cos(l);
+  const y2 = y * Math.cos(TILT) - z * Math.sin(TILT), z2 = y * Math.sin(TILT) + z * Math.cos(TILT);
+  return [cx + x * R * s, cy - y2 * R * s, z2];
+}
+function body(a, s = 1) {
+  if (a <= 0) return;
+  const gr = g.createRadialGradient(cx - R * s * .35, cy - R * s * .4, R * s * .1, cx, cy, R * s);
+  gr.addColorStop(0, `rgba(16,40,74,${a})`); gr.addColorStop(.7, `rgba(6,16,34,${a})`); gr.addColorStop(1, `rgba(2,6,14,${a})`);
+  g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, R * s, 0, TAU); g.fill();
+}
+function limb(a, s = 1, color = "63,224,255") {
+  if (a <= 0) return;
+  g.save(); g.shadowColor = `rgba(${color},.9)`; g.shadowBlur = 26; g.strokeStyle = `rgba(${color},${a})`;
+  g.lineWidth = 1.2; g.beginPath(); g.arc(cx, cy, R * s, 0, TAU); g.stroke(); g.restore();
+}
+function coast(rot, frac, a, s = 1, test) {
+  if (a <= 0 || frac <= 0) return;
+  g.save(); g.strokeStyle = `rgba(140,235,255,${a})`; g.lineWidth = 1; g.shadowColor = "rgba(63,224,255,.8)"; g.shadowBlur = 6;
+  g.beginPath();
+  for (const r of rings) {
+    const n = Math.max(2, Math.floor(r.length * frac)); let pen = false;
+    for (let i = 0; i < n; i++) {
+      const [x, y, z] = proj(r[i][0], r[i][1], rot, s);
+      if (z > 0 && (!test || test(x, y))) { pen ? g.lineTo(x, y) : g.moveTo(x, y); pen = true; } else pen = false;
+    }
+  }
+  g.stroke(); g.restore();
+}
+function graticule(rot, a, s = 1) {
+  if (a <= 0) return;
+  g.strokeStyle = `rgba(90,150,210,${a})`; g.lineWidth = .6; g.beginPath();
+  for (let lon = -180; lon < 180; lon += 30) { let pen = false;
+    for (let lat = -90; lat <= 90; lat += 4) { const [x, y, z] = proj(lon, lat, rot, s);
+      if (z > 0) { pen ? g.lineTo(x, y) : g.moveTo(x, y); pen = true; } else pen = false; } }
+  for (let lat = -60; lat <= 60; lat += 30) { let pen = false;
+    for (let lon = -180; lon <= 180; lon += 4) { const [x, y, z] = proj(lon, lat, rot, s);
+      if (z > 0) { pen ? g.lineTo(x, y) : g.moveTo(x, y); pen = true; } else pen = false; } }
+  g.stroke();
+}
+const GLYPHS = "▚▞▙▟01<>/\\#+=·:";
+function scramble(text, p) {
+  const n = Math.floor(p * text.length); let out = "";
+  for (let i = 0; i < text.length; i++) out += i < n ? text[i] : GLYPHS[(Math.random() * GLYPHS.length) | 0];
+  return out;
+}
+function setWord(p) { word.style.opacity = p > 0 ? 1 : 0; if (p > 0) word.innerHTML = "<b>" + scramble("3D", clamp(p * 4)) + "</b>" + scramble("WEATHER", p); }
+const fmt = n => Math.round(n).toLocaleString("en-US");
+
+// ---------- 1 · Ignition ----------
+const P = Array.from({ length: 2600 }, () => {
+  const lat = Math.asin(Math.random() * 2 - 1) / D, lon = Math.random() * 360 - 180, e = (Math.random() * 4) | 0, k = Math.random();
+  return { lon, lat, seed: Math.random(), delay: Math.random() * .55,
+    u: Math.cos(lat * D * 3) * 1.4 + .4, v: Math.sin(lon * D * 2 + lat * D) * .6,
+    sx: e === 0 ? -.05 : e === 1 ? 1.05 : k, sy: e === 2 ? -.05 : e === 3 ? 1.05 : k };
+});
+function ignition(t, now) {
+  const rot = now * 7 + 20, zoom = 1 + .28 * eIO(seg(t, 2.45, 3.0));
+  const hl = seg(t, 0, .4), hfade = 1 - seg(t, .9, 1.4);
+  if (hl > 0 && hfade > 0) { g.strokeStyle = `rgba(63,224,255,${.8 * hfade})`; g.lineWidth = 1; g.shadowColor = "#3fe0ff"; g.shadowBlur = 14;
+    g.beginPath(); g.moveTo(cx - W * .5 * eOut(hl), cy); g.lineTo(cx + W * .5 * eOut(hl), cy); g.stroke(); g.shadowBlur = 0; }
+  body(seg(t, .9, 1.6), zoom);
+  coast(rot, eOut(seg(t, 1.35, 2.0)), .75 * seg(t, 1.35, 1.6), zoom);
+  g.lineWidth = 1.1; g.lineCap = "round";
+  for (const p of P) {
+    const arr = eOut(seg(t, .55 + p.delay, 1.35 + p.delay));
+    if (arr <= 0) continue;
+    const life = (now * .22 + p.seed) % 1, off = life * 9, a = Math.sin(Math.PI * life);
+    const [x1, y1, z1] = proj(p.lon + p.u * off, p.lat + p.v * off, rot, zoom);
+    const [x0, y0] = proj(p.lon + p.u * (off - 1.6), p.lat + p.v * (off - 1.6), rot, zoom);
+    if (arr < 1) {
+      const sx = p.sx * W, sy = p.sy * H, x = lerp(sx, x1, arr), y = lerp(sy, y1, arr), b = Math.max(0, arr - .06);
+      g.strokeStyle = `rgba(160,240,255,${.25 + .5 * arr})`; g.beginPath(); g.moveTo(lerp(sx, x1, b), lerp(sy, y1, b)); g.lineTo(x, y); g.stroke();
+    } else if (z1 > 0) {
+      g.strokeStyle = `rgba(220,248,255,${.6 * a * (.35 + .65 * z1)})`; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+    }
+  }
+  limb(.9 * seg(t, 1.0, 1.6), zoom);
+  hud.style.opacity = seg(t, .3, .5) * (1 - .0 * t);
+  hud.textContent = scramble("RUN 2026-11-14 00Z", seg(t, .3, .7)) + "\n" + scramble("GFS-WAVE · ECMWF IFS", seg(t, .5, .9)) + "\n" +
+    fmt(295000 * eOut(seg(t, .55, 1.6))) + " CELLS";
+  hud.style.transform = `translateY(${-8 * seg(t, 2.45, 2.9)}px)`;
+  setWord(seg(t, 1.85, 2.4)); word.style.opacity = seg(t, 1.85, 2.0) * (1 - seg(t, 2.6, 3.0));
+  tag.style.opacity = seg(t, 2.2, 2.45) * (1 - seg(t, 2.6, 3.0));
+  const c = eOut(seg(t, 2.55, 3.0)); controls.style.opacity = c; controls.style.transform = `translateX(-50%) translateY(${30 * (1 - c)}px)`;
+}
+
+// ---------- 2 · Sonar ----------
+const RAMP = [[0,[30,90,160]],[1.5,[35,150,185]],[2.5,[70,190,140]],[4,[225,210,70]],[6,[240,140,40]],[9,[215,50,50]],[12,[150,40,160]]];
+function ramp(h) { for (let i = 1; i < RAMP.length; i++) if (h <= RAMP[i][0]) { const p = (h - RAMP[i-1][0]) / (RAMP[i][0] - RAMP[i-1][0]);
+  return RAMP[i-1][1].map((c, k) => Math.round(lerp(c, RAMP[i][1][k], p))); } return RAMP[RAMP.length - 1][1]; }
+const field = (lon, lat) => 12 * Math.pow(.5 + .5 * Math.sin(lon * D * 2.3 + 1) * Math.cos(lat * D * 3.1 - .6), 2.2) * (.4 + .6 * Math.abs(Math.sin(lat * D * 1.4)));
+function sonar(t, now) {
+  const rot = now * 5 + 150, a0 = -Math.PI / 2;
+  const s1 = TAU * seg(t, .15, 1.25), s2 = TAU * eIO(seg(t, 1.1, 2.1));
+  const ang = (x, y) => { let a = Math.atan2(y - cy, x - cx) - a0; return a < 0 ? a + TAU : a; };
+  body(seg(t, 0, .3) * .9); graticule(rot, .32 * seg(t, 0, .4));
+  if (s2 > 0) for (let lat = -78; lat <= 78; lat += 4) for (let lon = -180; lon < 180; lon += 4 / Math.max(.25, Math.cos(lat * D))) {
+    const [x, y, z] = proj(lon, lat, rot); if (z <= .05 || ang(x, y) > s2) continue;
+    const c = ramp(field(lon, lat)); g.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${.55 * z})`; g.beginPath(); g.arc(x, y, R * .034, 0, TAU); g.fill(); }
+  coast(rot, 1, .85, 1, s1 >= TAU ? null : (x, y) => ang(x, y) <= s1);
+  const head = t < 1.25 ? s1 : s2;
+  if (t > .15 && t < 2.1) { g.save(); g.beginPath(); g.arc(cx, cy, R, 0, TAU); g.clip();
+    const cg = g.createConicGradient(a0 + head - TAU, cx, cy); cg.addColorStop(0, "rgba(63,224,255,0)"); cg.addColorStop(.82, "rgba(63,224,255,0)"); cg.addColorStop(1, "rgba(63,224,255,.5)");
+    g.fillStyle = cg; g.fillRect(cx - R, cy - R, R * 2, R * 2);
+    g.strokeStyle = "rgba(200,250,255,.95)"; g.lineWidth = 1.5; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a0 + head) * R, cy + Math.sin(a0 + head) * R); g.stroke(); g.restore(); }
+  limb(.9 * seg(t, 0, .4));
+  for (let i = 1; i <= 2; i++) { g.strokeStyle = `rgba(63,224,255,${.12 * seg(t, 0, .4)})`; g.lineWidth = .6; g.beginPath(); g.arc(cx, cy, R * (1 + i * .12), 0, TAU); g.stroke(); }
+  const lk = seg(t, 2.05, 2.45);
+  if (lk > 0) { const x = cx + R * .32, y = cy - R * .3, b = lerp(70, 20, eOut(lk)); g.strokeStyle = `rgba(255,79,163,${lk})`; g.lineWidth = 1.6;
+    for (const [sx, sy] of [[-1,-1],[1,-1],[1,1],[-1,1]]) { g.beginPath(); g.moveTo(x + sx * b, y + sy * (b - 9)); g.lineTo(x + sx * b, y + sy * b); g.lineTo(x + sx * (b - 9), y + sy * b); g.stroke(); }
+    if (lk > .6) { g.font = '12px ui-monospace, Consolas, monospace'; g.fillStyle = `rgba(255,79,163,${seg(lk, .6, 1)})`; g.fillText("13.9 M · NORTH PACIFIC", x + 30, y - 4);
+      g.fillStyle = `rgba(127,147,179,${seg(lk, .6, 1)})`; g.fillText("BIGGEST WAVES ON EARTH NOW", x + 30, y + 13); } }
+  hud.style.opacity = seg(t, .1, .3); hud.style.transform = "";
+  hud.textContent = "SCAN " + String(Math.round(100 * (t < 1.25 ? s1 : TAU) / TAU)).padStart(3, "0") + "%  COAST\n" +
+    "SCAN " + String(Math.round(100 * s2 / TAU)).padStart(3, "0") + "%  WAVE FIELD\n" + (lk > 0 ? "TARGET LOCKED" : "ACQUIRING…");
+  setWord(seg(t, 2.3, 2.8)); tag.style.opacity = seg(t, 2.7, 2.95); controls.style.opacity = 0;
+}
+
+// ---------- 3 · Tideline ----------
+function tideline(t, now) {
+  const rot = now * 7 + 20, draw = eOut(seg(t, 0, .55)), m = eIO(seg(t, .6, 1.25)), N = 240;
+  body(seg(t, 1.1, 1.6)); coast(rot, 1, .7 * seg(t, 1.25, 1.75));
+  g.save(); g.shadowColor = "#3fe0ff"; g.shadowBlur = 22; g.lineWidth = 1.6; g.strokeStyle = "rgba(170,242,255,.95)"; g.beginPath();
+  for (let i = 0; i <= N * draw; i++) { const u = i / N;
+    const lx = W * (-.03 + 1.06 * u), ly = cy + R * .34 * Math.sin(u * TAU * 2.5 - now * 3.2) * Math.sin(Math.PI * u) * (1 - m);
+    const a = -Math.PI / 2 + TAU * u, x = lerp(lx, cx + Math.cos(a) * R, m), y = lerp(ly, cy + Math.sin(a) * R, m);
+    i ? g.lineTo(x, y) : g.moveTo(x, y); }
+  g.stroke(); g.restore();
+  hud.style.opacity = 0; setWord(seg(t, 1.3, 1.8)); tag.style.opacity = seg(t, 1.7, 1.95); controls.style.opacity = 0;
+}
+
+// ---------- shell ----------
+const SCENES = [
+  { id: "ignition", dur: 3.2, fn: ignition, note: "1 · Ignition — real data streams in, wraps into the globe, and the splash becomes the live map (controls slide in at the end)." },
+  { id: "sonar", dur: 3.0, fn: sonar, note: "2 · Sonar — a sweep reveals coast, then the wave field, then locks onto the biggest storm on Earth." },
+  { id: "tideline", dur: 2.0, fn: tideline, note: "3 · Tideline — one glowing wave curls into the globe's edge. Shortest and calmest." },
+];
+let cur = 0, t = 0, ctl;
+function play() { ctl?.stop(); t = 0; word.style.opacity = tag.style.opacity = controls.style.opacity = hud.style.opacity = 0;
+  ctl = animate(0, SCENES[cur].dur, { duration: SCENES[cur].dur, ease: "linear", onUpdate: v => { t = v; } }); }
+function select(i) { cur = i; document.querySelectorAll("[data-tab]").forEach(b => b.classList.toggle("on", +b.dataset.tab === i));
+  note.textContent = SCENES[i].note; pick.dataset.choice = SCENES[i].id; pick.classList.remove("selected"); pick.textContent = "Pick this one"; play(); }
+document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => select(+b.dataset.tab));
+document.getElementById("replay").onclick = play;
+pick.addEventListener("click", () => { pick.classList.add("selected"); pick.textContent = "Picked: " + SCENES[cur].id; });
+addEventListener("keydown", e => { if (e.key >= "1" && e.key <= "3") select(+e.key - 1); if (e.key === " " || e.key === "r") play(); });
+(function frame(n) { g.clearRect(0, 0, W, H); SCENES[cur].fn(t, n / 1000); requestAnimationFrame(frame); })(0);
+select(0);
+</script>
+</body>
+</html>

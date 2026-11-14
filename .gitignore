@@ -1,0 +1,28 @@
+# Reference material stays local. The capture holds another site's code, fonts
+# and images, which must not be published; the saved model inputs are gigabytes.
+reference/
+
+# Licensed or secret data
+*.env
+.env*
+fes2022/
+tide-constants/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node / Astro
+node_modules/
+dist/
+.astro/
+
+# Design mockup sessions
+.superpowers/
+
+# Pipeline working files
+data/
+_tmp/
+*.egg-info/

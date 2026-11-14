@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "threedweather-pipeline"
+version = "0.1.0"
+description = "Builds the 3Dweather globe's forecast sprites from open model data"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = ["numpy", "omfiles", "pillow"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools]
+packages = ["pipeline", "pipeline.sources"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["reference: needs the local reference/ folder"]
