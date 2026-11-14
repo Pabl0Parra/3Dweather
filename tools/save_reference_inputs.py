@@ -32,7 +32,7 @@ NAN16 = 32767
 # Globe frames: every 3 h for 168 h.
 FRAME_TIMES = [RUN + timedelta(hours=h) for h in range(0, 169, 3)]
 # Rain may be an average over the frame step, so keep every hour GFS has.
-HOURLY_TIMES = [RUN + timedelta(hours=h) for h in range(0, 169)]
+HOURLY_TIMES = [RUN + timedelta(hours=h) for h in range(0, 172)]  # 171: the step after hour 168
 
 # model -> (run directory, {variable: times}) for remote subsetting
 SUBSET = {
