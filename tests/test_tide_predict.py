@@ -74,3 +74,64 @@ def test_extrema_heights_equal_predict():
     turns = extrema(datetime(2026, 11, 1, tzinfo=UTC), datetime(2026, 11, 3, tzinfo=UTC), cons)
     h = predict(t64([t for t, _, _ in turns]), cons)
     assert np.allclose(h, [x[1] for x in turns], atol=1e-6)
+
+
+# --- Task 2: subordinate stations and curves -------------------------------------------------
+
+from pipeline.tide_predict import Offsets, curve, subordinate  # noqa: E402
+
+
+def williamsburg_offsets():
+    o = json.loads((FIX / "8517921-offsets.json").read_text(encoding="utf-8"))
+    return Offsets(o["timeOffsetHighTide"], o["timeOffsetLowTide"], o["heightOffsetHighTide"],
+                   o["heightOffsetLowTide"], o["heightAdjustedType"])
+
+
+def battery_d():
+    d = {x["name"]: x["value"] for x in json.loads((FIX / "8518750-datums.json").read_text(encoding="utf-8"))["datums"]}
+    return d["MSL"] - d["MLLW"]
+
+
+def test_subordinate_matches_noaa_on_mllw():
+    D = battery_d()
+    ref = extrema(datetime(2026, 10, 31, tzinfo=UTC), datetime(2026, 12, 2, tzinfo=UTC), battery())
+    ref_mllw = [(t, h + D, k) for t, h, k in ref]
+    got = subordinate(ref_mllw, williamsburg_offsets(), 0.0)  # D = 0: heights stay on MLLW
+    want = noaa("8517921-hilo-mllw-2026-11.json")
+    got = [x for x in got if want[0][0] - timedelta(minutes=5) <= x[0] <= want[-1][0] + timedelta(minutes=5)]
+    assert len(got) == len(want)
+    for (t, h, k), (wt, wh, wk) in zip(got, want):
+        assert k == ("high" if wk == "H" else "low")
+        assert abs((t - wt).total_seconds()) <= 60 + 59, (t, wt)  # NOAA rounds to the minute
+        assert abs(h - wh) <= 0.01, (t, h, wh)
+
+
+def test_subordinate_msl_heights():
+    t0 = datetime(2026, 11, 1, tzinfo=UTC)
+    ref = [(t0, 0.6, "high"), (t0 + timedelta(hours=6), -0.5, "low")]
+    ratio = subordinate(ref, Offsets(-18, -12, 1.10, 0.90, "R"), 0.8)
+    # (h + D)·r − D·(r_high + r_low)/2, with D = 0.8 and mean ratio 1.0
+    assert ratio[0][1] == pytest.approx((0.6 + 0.8) * 1.10 - 0.8)
+    assert ratio[1][1] == pytest.approx((-0.5 + 0.8) * 0.90 - 0.8)
+    assert ratio[0][0] == t0 - timedelta(minutes=18) and ratio[1][0] == t0 + timedelta(hours=6, minutes=-12)
+    add = subordinate(ref, Offsets(5, 10, 0.3, 0.1, "A"), 0.8)
+    assert add[0][1] == pytest.approx(0.6 + 0.3 - 0.2) and add[1][1] == pytest.approx(-0.5 + 0.1 - 0.2)
+
+
+def test_subordinate_keeps_order_when_offsets_cross():
+    t0 = datetime(2026, 11, 1, tzinfo=UTC)
+    ref = [(t0, 1.0, "high"), (t0 + timedelta(hours=1), 0.9, "low"), (t0 + timedelta(hours=7), 1.0, "high")]
+    out = subordinate(ref, Offsets(90, -40, 1.0, 1.0, "R"), 0.0)
+    assert [x[0] for x in out] == sorted(x[0] for x in out)
+
+
+def test_curve_passes_through_turns_and_is_monotonic_between():
+    turns = extrema(datetime(2026, 11, 1, tzinfo=UTC), datetime(2026, 11, 3, tzinfo=UTC), battery())
+    pts = t64([t for t, _, _ in turns])
+    assert np.allclose(curve(turns, pts), [h for _, h, _ in turns], atol=1e-9)
+    a, b = turns[0], turns[1]
+    span = np.arange(pts[0], pts[1], np.timedelta64(600, "s"))
+    c = curve(turns, span)
+    assert np.all(np.diff(c) <= 1e-12) if a[2] == "high" else np.all(np.diff(c) >= -1e-12)
+    outside = curve(turns, t64([turns[0][0] - timedelta(hours=1)]))
+    assert np.isnan(outside[0])

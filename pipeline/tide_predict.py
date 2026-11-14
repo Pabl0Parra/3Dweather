@@ -197,3 +197,57 @@ def _drop_ripples(turns: list[list]) -> list[list]:
         else:
             out.append(x)
     return out
+
+
+# --- NOAA subordinate stations ----------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Offsets:
+    """NOAA tide-prediction offsets: minutes, and height ratios ("R") or additions in metres ("A")."""
+    time_high_min: float
+    time_low_min: float
+    height_high: float
+    height_low: float
+    kind: str
+
+
+def subordinate(ref_turns: list[tuple[datetime, float, str]], off: Offsets, ref_msl_above_mllw: float):
+    """A subordinate station's turns from its reference station's (MSL heights in, MSL heights out).
+
+    NOAA applies height offsets above MLLW. Our MSL rule: with D the reference station's MSL above
+    MLLW, a ratio gives (h + D)·r − D·mean(r) and an addition h + a − mean(a), so the station's mean
+    level stays at zero.
+    """
+    D = ref_msl_above_mllw
+    mean_r = (off.height_high + off.height_low) / 2
+    out = []
+    for t, h, kind in ref_turns:
+        high = kind == "high"
+        dt = off.time_high_min if high else off.time_low_min
+        v = off.height_high if high else off.height_low
+        if off.kind == "R":
+            hh = (h + D) * v - D * mean_r
+        else:
+            hh = h + v - mean_r
+        out.append((t + timedelta(minutes=dt), hh, kind))
+    out.sort(key=lambda x: x[0])
+    return out
+
+
+def curve(turns: list[tuple[datetime, float, str]], times: np.ndarray) -> np.ndarray:
+    """Heights between turns by cosine interpolation (NaN outside the first and last turn)."""
+    times = np.asarray(times).astype("datetime64[s]")
+    tt = np.array([_dt64(t) for t, _, _ in turns]).astype("datetime64[s]").astype(np.int64)
+    hh = np.array([h for _, h, _ in turns], dtype=np.float64)
+    x = times.astype(np.int64)
+    out = np.full(x.shape, np.nan)
+    if len(tt) < 2:
+        return out
+    i = np.searchsorted(tt, x, side="right") - 1
+    inside = (i >= 0) & (i < len(tt) - 1)
+    exact_last = x == tt[-1]
+    j = i[inside]
+    frac = (x[inside] - tt[j]) / (tt[j + 1] - tt[j])
+    out[inside] = hh[j] + (hh[j + 1] - hh[j]) * (1 - np.cos(np.pi * frac)) / 2
+    out[exact_last] = hh[-1]
+    return out
