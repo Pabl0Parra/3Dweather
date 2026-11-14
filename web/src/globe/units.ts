@@ -19,9 +19,16 @@ export function formatLength(m: number, u: Units["length"]): string {
   return u === "ft" ? `${(m * FT_PER_M).toFixed(1)} ft` : `${m.toFixed(1)} m`;
 }
 
-export function formatSpeed(ms: number, u: Units["speed"]): string {
+export function formatSpeed(ms: number, u: Units["speed"], decimals = 0): string {
   const [k, label] = { kn: [1.943844, "kn"], kmh: [3.6, "km/h"], ms: [1, "m/s"], mph: [2.236936, "mph"] }[u] as [number, string];
-  return `${Math.round(ms * k)} ${label}`;
+  return `${decimals ? (ms * k).toFixed(decimals) : Math.round(ms * k)} ${label}`;
+}
+
+const MM_PER_IN = 25.4;
+
+/** Rain rate: mm/h, or inches per hour alongside feet. */
+export function formatRain(mmh: number, length: Units["length"]): string {
+  return length === "ft" ? `${(mmh / MM_PER_IN).toFixed(2)} in/h` : `${mmh.toFixed(1)} mm/h`;
 }
 
 export function formatTemp(c: number, u: Units["temp"]): string {

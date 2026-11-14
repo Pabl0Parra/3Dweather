@@ -47,3 +47,11 @@ test("legend ticks in feet sit at their metre positions", () => {
   expect(legendTicks("ft").map(([, t]) => t)).toEqual(["3", "10", "20", "30", "40"]);
   expect(legendTicks("ft")[1][0]).toBeCloseTo(3.048);
 });
+
+import { formatRain } from "./units";
+
+test("rain in mm/h, or in/h with feet", () => {
+  expect(formatRain(1.234, "m")).toBe("1.2 mm/h");
+  expect(formatRain(25.4, "ft")).toBe("1.00 in/h");
+  expect(formatRain(0.3, "ft")).toBe("0.01 in/h");
+});

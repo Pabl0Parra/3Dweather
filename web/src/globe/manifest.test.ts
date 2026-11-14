@@ -15,3 +15,24 @@ test("chunk slots", () => {
   expect(chunkSlot(M, 48)).toEqual({ chunk: 6, slot: 0 });
   expect(chunkSlot(M, 56)).toEqual({ chunk: 6, slot: 8 });
 });
+
+import { sheetFor } from "./manifest";
+
+const MC = { ...M, w: 768, h: 384, cols: 4, currentEvery: 24, currentFrames: 8 } as GlobeManifest;
+
+test("the ocean sheet is one file of 8 daily frames", () => {
+  const c = sheetFor(MC, "c");
+  expect(c.chunks).toEqual([8]);
+  expect(c.every).toBe(24);
+  expect(c.frames).toBe(8);
+  expect(c.url(0)).toBe("globe-c.webp");
+  expect(framePair(c, 167.5)).toMatchObject({ a: 6, b: 7 });
+  expect(framePair(c, 167.5).mix).toBeCloseTo(23.5 / 24, 9);
+  expect(framePair(c, 168)).toEqual({ a: 7, b: 7, mix: 0 });
+});
+
+test("other sheets follow the manifest chunks", () => {
+  const a = sheetFor(MC, "a");
+  expect(a.chunks).toEqual([8, 8, 8, 8, 8, 8, 9]);
+  expect(a.url(3)).toBe("globe-a3.webp");
+});

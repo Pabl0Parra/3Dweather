@@ -1,6 +1,7 @@
 // Tap readout: what the waves are doing at one point.
-import type { WaveSample } from "./field";
-import { formatLength, type Units } from "./units";
+import type { Sample, WaveSample } from "./field";
+import type { Layer } from "./layers";
+import { formatLength, formatRain, formatSpeed, formatTemp, type Units } from "./units";
 
 const POINTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 
@@ -19,6 +20,39 @@ export function readoutLines(s: WaveSample | null, lat: number, lon: number, u: 
   if (![s.heightM, s.periodS, s.fromDeg].every(Number.isFinite)) return ["No wave data here", coord];
   if (s.heightM < 0.05) return ["Calm", coord];
   return [formatLength(s.heightM, u.length), `Period ${Math.round(s.periodS)} s`, `From ${compass(s.fromDeg)} (${Math.round(s.fromDeg) % 360}°)`, coord];
+}
+
+const fin = (x: number | undefined): x is number => x !== undefined && Number.isFinite(x);
+const dir = (deg: number) => `${compass(deg)} (${Math.round(deg) % 360}°)`;
+
+/** Readout lines for any layer. `s` is null on land for sea-only layers. */
+export function readoutFor(layer: Layer, s: Sample | null, lat: number, lon: number, u: Units): string[] {
+  const coord = formatCoord(lat, lon);
+  switch (layer.id) {
+    case "waves":
+      return readoutLines(s && { heightM: s.waveM ?? NaN, periodS: s.periodS ?? NaN, fromDeg: s.waveFromDeg ?? NaN, u: 0, v: 0 }, lat, lon, u);
+    case "currents": {
+      if (!s) return ["Land — no current data", coord];
+      if (!fin(s.currentMs)) return ["No current data here", coord];
+      const lines = [s.currentMs < 0.05 ? "Slack" : `Current ${formatSpeed(s.currentMs, u.speed, 1)} toward ${compass(s.currentToDeg ?? 0)}`];
+      if (fin(s.seaC)) lines.push(`Sea ${formatTemp(s.seaC, u.temp)}`);
+      return [...lines, coord];
+    }
+    case "wind": {
+      if (!s || !fin(s.windMs)) return ["No wind data here", coord];
+      const lines = [s.windMs < 0.5 ? "Calm" : `Wind ${formatSpeed(s.windMs, u.speed)} from ${dir(s.windFromDeg ?? 0)}`];
+      if (fin(s.gustMs)) lines.push(`Gusts ${formatSpeed(s.gustMs, u.speed)}`);
+      return [...lines, coord];
+    }
+    case "rain": {
+      if (!s || !fin(s.rainMmh)) return ["No rain data here", coord];
+      const lines = [s.rainMmh < 0.05 ? "No rain" : `Rain ${formatRain(s.rainMmh, u.length)}`];
+      if (fin(s.cloudPct)) lines.push(`Cloud ${Math.round(s.cloudPct)} %`);
+      return [...lines, coord];
+    }
+    case "temperature":
+      return s && fin(s.airC) ? [`Air ${formatTemp(s.airC, u.temp)}`, coord] : ["No temperature data here", coord];
+  }
 }
 
 /** The readout panel. The marker itself is drawn by the globe on the flow canvas. */

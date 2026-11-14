@@ -1,5 +1,5 @@
 // Loads sprite chunks and hands out single frames as RGBA pixels.
-import { chunkSlot, type GlobeManifest } from "./manifest";
+import { chunkSlot, framePair, sheetFor, type Family, type GlobeManifest, type Sheet } from "./manifest";
 
 export const RETRY_DELAYS_MS = [2000, 4000, 8000, 16000];
 export const LOAD_NOTICE = "Couldn't load the forecast, retrying…";
@@ -33,7 +33,7 @@ export class FrameStore {
   private sleep: (ms: number) => Promise<void>;
   private decode: (blob: Blob) => Promise<ImageData>;
 
-  constructor(private base: string, private dir: string, private family: "w", private m: GlobeManifest, opts: Opts = {}) {
+  constructor(private base: string, private dir: string, private m: Sheet, opts: Opts = {}) {
     this.fetchImpl = opts.fetchImpl ?? ((...a) => fetch(...a));
     this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.decode = opts.decode ?? decodeImage;
@@ -85,7 +85,7 @@ export class FrameStore {
   }
 
   private async fetchWithRetry(chunk: number): Promise<void> {
-    const url = `${this.base}/${this.dir}/globe-${this.family}${chunk}.webp`;
+    const url = `${this.base}/${this.dir}/${this.m.url(chunk)}`;
     for (let attempt = 0; ; attempt++) {
       try {
         const res = await this.fetchImpl(url);
@@ -98,5 +98,37 @@ export class FrameStore {
         await this.sleep(RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)]);
       }
     }
+  }
+}
+
+export type FramePairPixels = { a: Uint8ClampedArray; b: Uint8ClampedArray; mix: number; fa: number; fb: number };
+
+/** The frame stores one layer needs, one per sprite family. */
+export class LayerFrames {
+  readonly stores: Partial<Record<Family, FrameStore>> = {};
+  private sheets: Partial<Record<Family, Sheet>> = {};
+
+  constructor(base: string, dir: string, m: GlobeManifest, families: Family[], opts: Opts = {}) {
+    for (const f of families) {
+      this.sheets[f] = sheetFor(m, f);
+      this.stores[f] = new FrameStore(base, dir, this.sheets[f]!, opts);
+    }
+  }
+
+  set onError(fn: (message: string | null) => void) {
+    for (const s of Object.values(this.stores)) s!.onError = fn;
+  }
+
+  /** Waits for every family's frames around `hour`; their pixels and blend factor. */
+  async ensure(hour: number): Promise<Partial<Record<Family, FramePairPixels>>> {
+    const fams = Object.keys(this.stores) as Family[];
+    const pairs = fams.map((f) => framePair(this.sheets[f]!, hour));
+    await Promise.all(fams.map((f, i) => this.stores[f]!.ensure(pairs[i].a, pairs[i].b)));
+    const out: Partial<Record<Family, FramePairPixels>> = {};
+    fams.forEach((f, i) => {
+      const a = this.stores[f]!.pixels(pairs[i].a), b = this.stores[f]!.pixels(pairs[i].b);
+      if (a && b) out[f] = { a, b, mix: pairs[i].mix, fa: pairs[i].a, fb: pairs[i].b };
+    });
+    return out;
   }
 }

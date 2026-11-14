@@ -42,3 +42,14 @@ test("ease", () => {
   expect(easeInOutCubic(1)).toBe(1);
   expect(easeInOutCubic(0.25)).toBeLessThan(0.25);
 });
+
+import { peakAt } from "./fly";
+
+test("peakAt reads the manifest series at the hour, clamped", () => {
+  const m = { peaks: { wind: [[30, 10, 20], [31, 11, 21], [32, 12, 22]], gust: [[40, 1, 2]] } } as any;
+  expect(peakAt(m, "wind", 1.4)).toEqual({ lat: 11, lon: 21 });
+  expect(peakAt(m, "wind", 1.6)).toEqual({ lat: 12, lon: 22 });
+  expect(peakAt(m, "wind", 99)).toEqual({ lat: 12, lon: 22 });
+  expect(peakAt(m, "gust", 50)).toEqual({ lat: 1, lon: 2 });
+  expect(peakAt(m, "rain", 0)).toBeNull();
+});

@@ -1,5 +1,7 @@
 // CPU-side reads of the wave layer and the land mask (particles, probe, peak search).
-import { decodeHeight, decodeWave } from "./codecs";
+import { decodeAirTemp, decodeCloud, decodeCurrent, decodeGust, decodeHeight, decodeRain, decodeSeaTemp, decodeWave, decodeWind } from "./codecs";
+import type { FramePairPixels } from "./frames";
+import type { Family, Layer } from "./layers";
 import type { GlobeManifest } from "./manifest";
 
 export type WaveSample = { heightM: number; periodS: number; fromDeg: number; u: number; v: number };
@@ -54,4 +56,60 @@ export function landGridFrom(img: ImageBitmap, w = 512, h = 256): LandGrid {
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   ctx.drawImage(img, 0, 0, w, h);
   return new LandGrid(ctx.getImageData(0, 0, w, h).data, w, h);
+}
+
+export type Frames = Partial<Record<Family, FramePairPixels>>;
+
+/** What one point holds, for the families a layer loaded. Absent fields are not known. */
+export type Sample = {
+  windMs?: number; windFromDeg?: number; gustMs?: number; rainMmh?: number; cloudPct?: number;
+  airC?: number; waveM?: number; periodS?: number; waveFromDeg?: number;
+  currentMs?: number; currentToDeg?: number; seaC?: number;
+};
+
+const toDeg = (rad: number) => ((rad * 180) / Math.PI + 360) % 360;
+
+/** Raw bytes of several channels at a point, interpolated in space and time. */
+export function sampleBytes(f: FramePairPixels, m: Grid, lat: number, lon: number, channels: number[]): number[] {
+  const c = corners(m, lat, lon);
+  return channels.map((ch) => bilinear(f.a, c, ch) * (1 - f.mix) + bilinear(f.b, c, ch) * f.mix);
+}
+
+export function sampleLayer(layer: Layer, frames: Frames, m: Grid & { gustHours?: number }, lat: number, lon: number, hour: number): Sample {
+  const s: Sample = {};
+  if (frames.a) {
+    const [u, v, r] = sampleBytes(frames.a, m, lat, lon, [0, 1, 2]).map((b, i) => (i < 2 ? decodeWind(b) : decodeRain(b)));
+    s.windMs = Math.hypot(u, v);
+    s.windFromDeg = toDeg(Math.atan2(-u, -v));
+    s.rainMmh = r;
+  }
+  if (frames.b) {
+    const [cloud, , gust] = sampleBytes(frames.b, m, lat, lon, [0, 1, 2]);
+    s.cloudPct = decodeCloud(cloud);
+    if (hour <= (m.gustHours ?? 84)) s.gustMs = decodeGust(gust);
+  }
+  if (frames.t) s.airC = decodeAirTemp(sampleBytes(frames.t, m, lat, lon, [0])[0]);
+  if (frames.w) {
+    const w = sampleWave(frames.w.a, frames.w.b, frames.w.mix, m, lat, lon);
+    s.waveM = w.heightM; s.periodS = w.periodS; s.waveFromDeg = w.fromDeg;
+  }
+  if (frames.c) {
+    const [u, v, sea] = sampleBytes(frames.c, m, lat, lon, [0, 1, 2]);
+    const cu = decodeCurrent(u), cv = decodeCurrent(v);
+    s.currentMs = Math.hypot(cu, cv);
+    s.currentToDeg = toDeg(Math.atan2(cu, cv));
+    s.seaC = decodeSeaTemp(sea);
+  }
+  void layer;
+  return s;
+}
+
+/** Particle step vector (x east, y north) for a layer, scaled to about 0..1; null without data. */
+export function flowVector(layer: Layer, frames: Frames, m: Grid, lat: number, lon: number): { u: number; v: number } | null {
+  const f = frames[layer.flow.family];
+  if (!f) return null;
+  const [bu, bv] = sampleBytes(f, m, lat, lon, layer.flow.channels);
+  if (layer.flow.family === "w") return { u: (bu - 128) / 127, v: (bv - 128) / 127 };
+  const dec = layer.flow.family === "c" ? decodeCurrent : decodeWind;
+  return { u: dec(bu) / layer.flow.scale, v: dec(bv) / layer.flow.scale };
 }

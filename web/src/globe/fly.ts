@@ -40,3 +40,11 @@ export function flyView(from: View, to: View, t: number): View {
     zoom: from.zoom * (to.zoom / from.zoom) ** e,
   });
 }
+
+/** Where a manifest peak series puts the extreme at an hour (clamped to the series). */
+export function peakAt(m: { peaks: Record<string, [number, number, number][]> }, key: string, hour: number): { lat: number; lon: number } | null {
+  const series = m.peaks[key];
+  if (!series?.length) return null;
+  const [, lat, lon] = series[Math.max(0, Math.min(series.length - 1, Math.round(hour)))];
+  return { lat, lon };
+}
