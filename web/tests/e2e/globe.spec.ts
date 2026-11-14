@@ -114,6 +114,20 @@ test("the timeline label and legend are shown", async ({ page }) => {
   await expect(page.locator(".legend")).toContainText("Wave height");
 });
 
+test("without WebGL the page says so instead of staying blank", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    const orig = HTMLCanvasElement.prototype.getContext;
+    (HTMLCanvasElement.prototype as any).getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
+      return type.startsWith("webgl") ? null : (orig as any).call(this, type, ...rest);
+    };
+  });
+  await page.goto("/wave-map#20,0,1");
+  await expect(page.locator("#globe")).toContainText("needs WebGL");
+  expect(errors).toEqual([]);
+});
+
 test("no console errors on load", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });

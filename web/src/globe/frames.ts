@@ -39,11 +39,17 @@ export class FrameStore {
     this.decode = opts.decode ?? decodeImage;
   }
 
-  /** Load the frame's chunk and the next one; forget the rest. */
-  async ensure(frame: number): Promise<void> {
+  /**
+   * Wait for the chunks holding `frame` and `also` (which may be in the next chunk);
+   * prefetch the next chunk without waiting for it; forget the rest.
+   */
+  async ensure(frame: number, also: number = frame): Promise<void> {
     const keep = chunksToKeep(chunkSlot(this.m, frame).chunk, this.m.chunks.length);
     for (const c of [...this.chunks.keys()]) if (!keep.includes(c)) this.drop(c);
-    await Promise.all(keep.map((c) => this.load(c)));
+    const need = new Set([chunkSlot(this.m, frame).chunk, chunkSlot(this.m, also).chunk]);
+    const loads = [...need].map((c) => this.load(c));
+    for (const c of keep) if (!need.has(c)) void this.load(c);
+    await Promise.all(loads);
   }
 
   pixels(frame: number): Uint8ClampedArray | null {

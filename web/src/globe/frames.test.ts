@@ -78,3 +78,20 @@ test("retries with the backoff schedule and reports the notice", async () => {
   expect(notices[notices.length - 1]).toBeNull();
   expect(store.pixels(0)).not.toBeNull();
 });
+
+test("ensure does not wait for the next chunk's prefetch", async () => {
+  // Chunk 2 never arrives; frame 13 (chunk 1) must still be served.
+  const fetchImpl = (async (url: string) =>
+    url.includes("globe-w2") ? new Promise<Response>(() => {}) : new Response(new Blob([url]))) as unknown as typeof fetch;
+  const store = new FrameStore("/wx", "d", "w", M, { fetchImpl, decode: decodeFromUrl });
+  const done = await Promise.race([store.ensure(13).then(() => "done"), new Promise((r) => setTimeout(() => r("stuck"), 200))]);
+  expect(done).toBe("done");
+  expect(store.pixels(13)).not.toBeNull();
+});
+
+test("ensure can also wait for a second frame in the next chunk", async () => {
+  const store = new FrameStore("/wx", "d", "w", M, { fetchImpl: okFetch([]), decode: decodeFromUrl });
+  await store.ensure(15, 16); // last of chunk 1, first of chunk 2
+  expect(store.pixels(15)).not.toBeNull();
+  expect(store.pixels(16)).not.toBeNull();
+});

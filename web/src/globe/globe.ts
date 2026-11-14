@@ -48,7 +48,7 @@ async function withRetry<T>(load: () => Promise<T>, notice: (m: string | null) =
 export async function initGlobe(
   root: HTMLElement,
   opts: { timeline?: HTMLElement; legend?: HTMLElement } = {},
-): Promise<GlobeHandle> {
+): Promise<GlobeHandle | null> {
   const canvas = document.createElement("canvas");
   canvas.className = "globe-gl";
   canvas.setAttribute("aria-hidden", "true");
@@ -69,7 +69,19 @@ export async function initGlobe(
   const ctx = overlay.getContext("2d")!;
   let coast: number[][] = [];
 
-  const renderer = new GlobeRenderer(canvas);
+  let renderer: GlobeRenderer;
+  try {
+    renderer = new GlobeRenderer(canvas);
+  } catch (err) {
+    // No WebGL, or the shader failed on this GPU: say so rather than leave an empty box.
+    console.warn(err);
+    root.replaceChildren();
+    const msg = document.createElement("p");
+    msg.className = "globe-fallback";
+    msg.textContent = "The wave map needs WebGL, which this browser or device isn't providing.";
+    root.append(msg);
+    return null;
+  }
   let view = parseHash(location.hash) ?? DEFAULT_VIEW;
   let hour = 0;
   let dirty = true;
@@ -137,7 +149,7 @@ export async function initGlobe(
     if (!manifest || !store) return;
     const seq = ++applySeq;
     const pair = framePair(manifest, hour);
-    await store.ensure(pair.a);
+    await store.ensure(pair.a, pair.b);
     if (seq !== applySeq) return; // a newer hour has been asked for meanwhile
     if (pair.a !== shown.a || pair.b !== shown.b) {
       const a = store.pixels(pair.a), b = store.pixels(pair.b);
