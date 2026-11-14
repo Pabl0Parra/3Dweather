@@ -12,6 +12,10 @@ import "../styles/globe.css";
   <body>
     <main class="wave-page">
       <section class="globe" id="globe" aria-label="Interactive globe showing forecast wave height"></section>
+      <div class="controls">
+        <div id="timeline"></div>
+        <div id="legend"></div>
+      </div>
       <noscript><p class="credits">The wave map needs JavaScript and WebGL.</p></noscript>
       <p class="credits">
         Waves: NOAA GFS-Wave via <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0) · Coastlines: Natural Earth
@@ -19,7 +23,10 @@ import "../styles/globe.css";
     </main>
     <script>
       import { initGlobe } from "../globe/globe";
-      initGlobe(document.getElementById("globe")!);
+      initGlobe(document.getElementById("globe")!, {
+        timeline: document.getElementById("timeline")!,
+        legend: document.getElementById("legend")!,
+      });
     </script>
   </body>
 </html>

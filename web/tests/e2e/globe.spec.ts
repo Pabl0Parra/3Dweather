@@ -10,6 +10,15 @@ test.skip(!HAS_DATA, "web/public/wx/latest.json missing: build the dev data firs
 async function open(page: Page, hash: string) {
   await page.goto(`/wave-map?debug${hash}`);
   await page.waitForFunction(() => (window as any).__globe?.ready === true, null, { timeout: 30_000 });
+  await setHour(page, 0);
+}
+
+/** Jump to a forecast hour and wait for the frame it causes to be drawn. */
+async function setHour(page: Page, h: number) {
+  await page.evaluate(async (h) => {
+    await (window as any).__globe.setHour(h);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  }, h);
 }
 
 /** RGBA of the WebGL canvas at an offset from its centre (CSS px). */
@@ -48,7 +57,8 @@ test("no seam at the antimeridian", async ({ page }) => {
 });
 
 test("a failed sprite shows the retry notice and still draws land", async ({ page }) => {
-  await page.route("**/globe-w0.webp", (route) => route.abort());
+  // Every chunk: the timeline opens at the current hour, which may be in any chunk.
+  await page.route("**/globe-w*.webp", (route) => route.abort());
   await page.goto("/wave-map?debug#40.4,-3.7,4");
   await expect(page.getByText("Couldn't load the forecast")).toBeVisible({ timeout: 15_000 });
   await page.waitForFunction(() => (window as any).__globe?.drawn === true);
@@ -80,6 +90,28 @@ test("the wheel does not zoom before the map is clicked", async ({ page }) => {
 test("a malformed hash falls back to the default view", async ({ page }) => {
   await open(page, "#abc");
   expect(await page.evaluate(() => (window as any).__globe.view())).toEqual({ lat0: 20, lon0: 0, zoom: 1 });
+});
+
+test("Space starts playback and the slider moves", async ({ page }) => {
+  await open(page, "#20,0,1");
+  const slider = page.locator(".tl-slider");
+  const before = Number(await slider.inputValue());
+  await page.locator("body").press("Space");
+  await expect.poll(async () => Number(await slider.inputValue()), { timeout: 2000 }).toBeGreaterThan(before);
+});
+
+test("frames blend between forecast steps", async ({ page }) => {
+  await open(page, "#44.28,-140.92,4");
+  const at0 = await pixel(page);
+  await setHour(page, 4.5);
+  const at45 = await pixel(page);
+  expect(at45.slice(0, 3)).not.toEqual(at0.slice(0, 3));
+});
+
+test("the timeline label and legend are shown", async ({ page }) => {
+  await open(page, "#20,0,1");
+  await expect(page.locator(".tl-label")).toHaveText(/^\w{3} \d{1,2} \w{3}, 06:00 · /);
+  await expect(page.locator(".legend")).toContainText("Wave height");
 });
 
 test("no console errors on load", async ({ page }) => {

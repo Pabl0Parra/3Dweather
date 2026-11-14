@@ -24,7 +24,7 @@ html, body {
   position: relative;
   flex: 1;
   min-height: 420px;
-  height: calc(100vh - 44px);
+  height: calc(100vh - 120px);
   overflow: hidden;
   touch-action: none;
 }
@@ -63,6 +63,75 @@ html, body {
   pointer-events: none;
   z-index: 3;
 }
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 28px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  background: linear-gradient(#060d1a, var(--bg));
+}
+
+.timeline {
+  flex: 1 1 420px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: "play track speed" "label label label";
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.tl-play, .tl-speed {
+  border: 1px solid var(--line);
+  background: #0b1628;
+  color: var(--ink);
+  border-radius: 999px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.tl-play { grid-area: play; }
+.tl-speed { grid-area: speed; font-variant-numeric: tabular-nums; }
+.tl-play:hover, .tl-speed:hover { border-color: var(--cyan); }
+.tl-play:focus-visible, .tl-speed:focus-visible, .tl-slider:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+.tl-track { grid-area: track; position: relative; padding-top: 14px; min-width: 0; }
+.tl-slider { width: 100%; margin: 0; accent-color: var(--cyan); }
+.tl-ticks { position: absolute; inset: 0 0 auto 0; height: 14px; pointer-events: none; }
+.tl-day {
+  position: absolute;
+  top: 0;
+  padding-left: 4px;
+  border-left: 1px solid var(--line);
+  font-size: 10px;
+  line-height: 12px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.tl-now {
+  position: absolute;
+  top: 2px;
+  width: 2px;
+  height: 30px;
+  margin-left: -1px;
+  background: var(--hot);
+  border-radius: 1px;
+}
+
+.tl-label { grid-area: label; font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.legend { flex: 0 1 260px; display: grid; gap: 4px; font-size: 11px; color: var(--dim); }
+.lg-title { text-transform: uppercase; letter-spacing: 0.08em; }
+.lg-bar { height: 8px; border-radius: 4px; }
+.lg-ticks { position: relative; height: 12px; }
+.lg-ticks span { position: absolute; transform: translateX(-50%); }
+.lg-ticks .lg-unit { right: 0; transform: none; }
 
 .credits {
   margin: 0;
