@@ -141,6 +141,32 @@ test("particle trails are drawn over the sea", async ({ page }) => {
   expect(lit).toBeGreaterThan(200);
 });
 
+test("units menu switches the legend to feet and remembers it", async ({ page }) => {
+  await open(page, "#20,0,1");
+  await page.getByRole("button", { name: "Units" }).click();
+  await page.getByRole("radio", { name: "ft" }).check();
+  await expect(page.locator(".lg-ticks")).toContainText("40");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Units" })).toBeHidden();
+  await page.reload();
+  await page.waitForFunction(() => (window as any).__globe?.ready === true);
+  await expect(page.locator(".lg-unit")).toHaveText("ft");
+});
+
+test("units still switch when storage is blocked", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", { get() { throw new Error("blocked"); } });
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await open(page, "#20,0,1");
+  await expect(page.locator(".lg-unit")).toHaveText("m");
+  await page.getByRole("button", { name: "Units" }).click();
+  await page.getByRole("radio", { name: "ft" }).check();
+  await expect(page.locator(".lg-unit")).toHaveText("ft");
+  expect(errors).toEqual([]);
+});
+
 test("no console errors on load", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });

@@ -7,6 +7,7 @@ import { formatHash, parseHash } from "./hash";
 import { drawOverlay } from "./overlay";
 import { initialHour, mountTimeline, type TimelineHandle } from "./timeline";
 import { mountLegend } from "./ui";
+import { loadUnits, mountUnitsMenu, type Units } from "./units";
 import { framePair, loadLatest, loadManifest, type GlobeManifest } from "./manifest";
 import { GlobeRenderer } from "./renderer";
 import { clampView, project, radiusPx, type View } from "./view";
@@ -49,7 +50,7 @@ async function withRetry<T>(load: () => Promise<T>, notice: (m: string | null) =
 
 export async function initGlobe(
   root: HTMLElement,
-  opts: { timeline?: HTMLElement; legend?: HTMLElement } = {},
+  opts: { timeline?: HTMLElement; legend?: HTMLElement; unitsButton?: HTMLButtonElement } = {},
 ): Promise<GlobeHandle | null> {
   const canvas = document.createElement("canvas");
   canvas.className = "globe-gl";
@@ -107,6 +108,10 @@ export async function initGlobe(
   // CPU copies for particles, the probe and the peak search.
   let pair: { a: Uint8ClampedArray; b: Uint8ClampedArray; mix: number } | null = null;
   let land: LandGrid | null = null;
+  const unitListeners: ((u: Units) => void)[] = [];
+  let units: Units = opts.unitsButton
+    ? mountUnitsMenu(opts.unitsButton, (u) => { units = u; unitListeners.forEach((f) => f(u)); })
+    : loadUnits();
 
   const handle: GlobeHandle = {
     ready: false,
@@ -246,7 +251,8 @@ export async function initGlobe(
     new IntersectionObserver(([e]) => t.setSuspended(!e.isIntersecting)).observe(root);
     t.setPlaying(!window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   }
-  if (opts.legend) mountLegend(opts.legend);
+  const setLegendUnit = opts.legend ? mountLegend(opts.legend, units.length) : null;
+  unitListeners.push((u) => setLegendUnit?.(u.length));
   await applyHour();
   return handle;
 }
