@@ -104,6 +104,6 @@ def test_web_region_list_matches_the_pipeline():
     import json as _json
     from pathlib import Path
     ts = (Path(__file__).resolve().parent.parent / "web" / "src" / "region" / "regions.ts").read_text(encoding="utf-8")
-    rows = re.findall(r'slug: ("[^"]*"), title: ("[^"]*"), tz: ("[^"]*"),\s*description: ("[^"]*")', ts)
-    assert [(_json.loads(s), _json.loads(t), _json.loads(z), _json.loads(d)) for s, t, z, d in rows] == \
-        [(r.slug, r.title, r.tz, r.description) for r in REGIONS]
+    rows = re.findall(r'slug: ("[^"]*"), title: ("[^"]*"), tz: ("[^"]*"), bounds: (\[[^\]]*\]),\s*description: ("[^"]*")', ts)
+    assert [(_json.loads(s), _json.loads(t), _json.loads(z), _json.loads(b), _json.loads(d)) for s, t, z, b, d in rows] == \
+        [(r.slug, r.title, r.tz, [r.west, r.south, r.east, r.north], r.description) for r in REGIONS]
