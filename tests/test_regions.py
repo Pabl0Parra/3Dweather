@@ -97,3 +97,13 @@ def test_region_peak_reports_value_and_position():
     f[2, 2] = 12.345
     assert region_peak(f, g) == [12.3, 46.0, -6.0]
     assert region_peak(np.full((g.h, g.w), np.nan), g) == [0.0, 0.0, 0.0]
+
+
+def test_web_region_list_matches_the_pipeline():
+    """web/src/region/regions.ts builds the pages; it must name the same regions as the pipeline."""
+    import json as _json
+    from pathlib import Path
+    ts = (Path(__file__).resolve().parent.parent / "web" / "src" / "region" / "regions.ts").read_text(encoding="utf-8")
+    rows = re.findall(r'slug: ("[^"]*"), title: ("[^"]*"), tz: ("[^"]*"),\s*description: ("[^"]*")', ts)
+    assert [(_json.loads(s), _json.loads(t), _json.loads(z), _json.loads(d)) for s, t, z, d in rows] == \
+        [(r.slug, r.title, r.tz, r.description) for r in REGIONS]

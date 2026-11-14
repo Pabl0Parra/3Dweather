@@ -1,0 +1,87 @@
+---
+// One flat regional map page; `layer` picks the opening layer (/weather-map/{region} rain, /wind-map/{region} wind).
+import "../styles/globe.css";
+import "../styles/region.css";
+import { REGIONS, type RegionInfo } from "../region/regions";
+
+interface Props { region: RegionInfo; layer: "rain" | "wind" }
+const { region, layer } = Astro.props;
+const title = layer === "wind"
+  ? `${region.title} wind map: hour by hour for three days · 3Dweather`
+  : `${region.title} weather map: wind, rain and clouds · 3Dweather`;
+const base = layer === "wind" ? "/wind-map" : "/weather-map";
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={`${region.description} The next three days, hour by hour.`} />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/wave-map">3Dweather</a>
+      <nav class="layer-tabs" aria-label="Globe maps">
+        <a href="/weather-map">Globe</a>
+        <a href={`/weather-map/${region.slug}`} aria-current="page">Regional</a>
+      </nav>
+      <div class="header-tools">
+        <button type="button" class="units-button" id="units-button">Units</button>
+      </div>
+    </header>
+    <main class="region-page" data-region={region.slug} data-layer={layer}>
+      <nav class="rm-crumbs" aria-label="Breadcrumb"><a href="/weather-map">Weather map</a> / <span>{region.title}</span></nav>
+      <h1>{region.title} {layer === "wind" ? "wind map" : "weather map: wind, rain and clouds"}</h1>
+      <p class="rm-lede">{region.description} Watch the next three days move, hour by hour.</p>
+      <nav class="rm-regions" aria-label="Regional maps">
+        <a href="/weather-map">Whole world</a>
+        {REGIONS.map((r) => (
+          <a href={`${base}/${r.slug}`} aria-current={r.slug === region.slug ? "page" : undefined}>{r.title}</a>
+        ))}
+      </nav>
+      <section class="rm-map" id="region-map" aria-label={`Map of ${region.title} showing forecast wind, rain and cloud`}></section>
+      <div class="controls rm-controls">
+        <div class="rm-layers" id="rm-layers" role="group" aria-label="Map layer">
+          <button type="button" data-layer="rain" aria-pressed={String(layer === "rain")}>Rain + clouds</button>
+          <button type="button" data-layer="wind" aria-pressed={String(layer === "wind")}>Wind</button>
+        </div>
+        <div id="timeline"></div>
+        <div id="legend"></div>
+      </div>
+      <p class="rm-hint">Drag to move · Ctrl + scroll or pinch to zoom · tap for the forecast at a point</p>
+      <noscript><p class="credits">This map needs JavaScript.</p></noscript>
+      <p class="credits">Model forecast, not radar · NOAA GFS via <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0) · Coastlines: Natural Earth</p>
+
+      <section class="rm-text">
+        <h2>The next three days in {region.title}</h2>
+        <div id="rm-summary"><p>Loading the forecast…</p></div>
+        <p class="rm-small">Peaks anywhere on this map from now to the end of the forecast, sea included. A forecast this far ahead can move by hours and by tens of kilometres.</p>
+
+        <h2>How to read the map</h2>
+        <p><strong>Rain + clouds.</strong> White is cloud; the thicker it is, the brighter. Colour is rain in millimetres per hour: blue is light, green and yellow moderate, orange and red heavy, pink and purple torrential.</p>
+        <p><strong>Wind.</strong> Colour is the wind speed 10 m above the ground or sea, and the lines move with it.</p>
+
+        <h2>Questions</h2>
+        <h3>Is this a weather radar?</h3>
+        <p>No. Radar shows where rain is falling now; this map shows where a weather model expects wind, rain and cloud over the next three days. The further ahead you look, the more a storm's timing and track can shift.</p>
+        <h3>Where does the forecast come from?</h3>
+        <p>From NOAA's GFS model at about 13 km resolution, as published by Open-Meteo, drawn every hour for 72 hours at about 25 km, from a new model run every six hours.</p>
+      </section>
+    </main>
+    <script>
+      import { mountRegionMap, type RegionLayer } from "../region/map";
+
+      const main = document.querySelector<HTMLElement>("main[data-region]")!;
+      void mountRegionMap(document.getElementById("region-map")!, {
+        slug: main.dataset.region!,
+        layer: main.dataset.layer as RegionLayer,
+        timeline: document.getElementById("timeline")!,
+        legend: document.getElementById("legend")!,
+        unitsButton: document.getElementById("units-button") as HTMLButtonElement,
+        layerButtons: document.getElementById("rm-layers")!,
+        summary: document.getElementById("rm-summary")!,
+      });
+    </script>
+  </body>
+</html>

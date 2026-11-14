@@ -1,0 +1,10 @@
+---
+import RegionPage from "../../components/RegionPage.astro";
+import { REGIONS, type RegionInfo } from "../../region/regions";
+
+export function getStaticPaths() {
+  return REGIONS.map((region) => ({ params: { region: region.slug }, props: { region } }));
+}
+const { region } = Astro.props as { region: RegionInfo };
+---
+<RegionPage region={region} layer="rain" />

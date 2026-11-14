@@ -40,13 +40,18 @@ export function timeLabel(runIso: string, hour: number, now: Date, timeZone?: st
   return s;
 }
 
-/** Hours (from the run) of each local midnight inside the window. */
-function midnights(runIso: string, hours: number): number[] {
+/** Hours (from the run) of each midnight inside the window, in the given zone (default: the browser's).
+ * Searched in 15-minute steps so half-hour zones work. */
+export function midnights(runIso: string, hours: number, timeZone?: string): number[] {
   const run = Date.parse(runIso);
-  const d = new Date(run);
-  d.setHours(24, 0, 0, 0);
+  const day = new Intl.DateTimeFormat("en-GB", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
   const out: number[] = [];
-  for (; (d.getTime() - run) / H <= hours; d.setDate(d.getDate() + 1)) out.push((d.getTime() - run) / H);
+  let prev = day.format(run);
+  for (let q = 1; q <= hours * 4; q++) {
+    const d = day.format(run + q * H / 4);
+    if (d !== prev) out.push(q / 4);
+    prev = d;
+  }
   return out;
 }
 
@@ -62,9 +67,9 @@ const SPEED_TEXT: Record<number, string> = { 0.5: "½×", 1: "1×", 2: "2×" };
 
 export function mountTimeline(
   root: HTMLElement,
-  opts: { hours: number; runIso: string; onHour: (h: number) => void },
+  opts: { hours: number; runIso: string; onHour: (h: number) => void; timeZone?: string },
 ): TimelineHandle {
-  const { hours, runIso, onHour } = opts;
+  const { hours, runIso, onHour, timeZone } = opts;
   root.classList.add("timeline");
   root.innerHTML = `
     <button type="button" class="tl-play" aria-label="Play"><span aria-hidden="true">▶</span></button>
@@ -80,11 +85,11 @@ export function mountTimeline(
   const label = root.querySelector<HTMLOutputElement>(".tl-label")!;
   const ticks = root.querySelector<HTMLDivElement>(".tl-ticks")!;
 
-  for (const m of midnights(runIso, hours)) {
+  for (const m of midnights(runIso, hours, timeZone)) {
     const t = document.createElement("span");
     t.className = "tl-day";
     t.style.left = `${(m / hours) * 100}%`;
-    t.textContent = new Intl.DateTimeFormat("en-GB", { weekday: "short" }).format(new Date(Date.parse(runIso) + m * H + H));
+    t.textContent = new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone }).format(new Date(Date.parse(runIso) + m * H + H));
     ticks.append(t);
   }
   const nowH = (Date.now() - Date.parse(runIso)) / H;
@@ -106,7 +111,7 @@ export function mountTimeline(
   const show = (h: number) => {
     hour = h;
     slider.value = String(h);
-    label.textContent = timeLabel(runIso, h, new Date());
+    label.textContent = timeLabel(runIso, h, new Date(), timeZone);
   };
   const emit = (h: number) => { show(h); onHour(h); };
 
