@@ -118,8 +118,31 @@ def mode_atmos() -> None:
         report(label, d)
 
 
+def mode_storm() -> None:
+    """Grid search for pipeline/storms.py: index = clip(k*cape^p) * clip(rain/g, 0, 1) * [LI < 0]."""
+    import itertools
+    g25 = src("ncep_gfs025")
+    data = []
+    for j in range(1, 8):  # frame 0 has no GFS rain
+        t = frame_time(j)
+        data.append((np.nan_to_num(on_globe(g25, "cape", t)), np.nan_to_num(on_globe(g25, "lifted_index", t)),
+                     C.decode_rain(ref("a", j, 2)), ref("s", j, 0)))
+    rows = []
+    for k, p, g, li in itertools.product((0.05, 0.1, 0.2, 0.4), (0.75, 1.0), (0.1, 0.5, 1.0, 3.0), (False, True)):
+        ious, mads = [], []
+        for cape, lifted, rain, s in data:
+            idx = np.clip(k * cape ** p, 0, 255) * np.clip(rain / g, 0, 1) * ((lifted < 0) if li else 1)
+            b = np.rint(idx).astype(int)
+            ious.append(((b > 0) & (s > 0)).sum() / max(((b > 0) | (s > 0)).sum(), 1))
+            mads.append(np.abs(b - s).mean())
+        rows.append((np.mean(ious), np.mean(mads), k, p, g, li))
+    print("storm: IoU of storm cells, mean byte difference, k, p, g, lifted-index gate")
+    for r in sorted(rows, reverse=True)[:5]:
+        print("  ", " ".join(str(round(x, 3)) if isinstance(x, float) else str(x) for x in r))
+
+
 if __name__ == "__main__":
-    modes = {"rain": mode_rain, "cloud": mode_cloud, "atmos": mode_atmos}
+    modes = {"rain": mode_rain, "cloud": mode_cloud, "atmos": mode_atmos, "storm": mode_storm}
     for m in sys.argv[1:] or ["rain", "cloud", "atmos"]:
         if m in modes:
             modes[m]()
