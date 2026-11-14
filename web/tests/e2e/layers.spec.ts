@@ -136,7 +136,7 @@ test("at phone width the tabs scroll inside the header, not the page", async ({ 
   await page.setViewportSize({ width: 375, height: 740 });
   await open(page, "/weather-map", "#20,0,1");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
-  await expect(page.locator('nav[aria-label="Map layers"] a')).toHaveCount(5);
+  await expect(page.locator('nav[aria-label="Map layers"] a')).toHaveCount(6);
 });
 
 test("switching clears the old layer's particles at once", async ({ page }) => {

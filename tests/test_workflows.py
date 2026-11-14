@@ -47,3 +47,12 @@ def test_scheduled_runs_without_secrets_do_nothing():
     t = text("forecast.yml")
     assert "EVENT: ${{ github.event_name }}" in t
     assert 'if [ -z "$R2_BUCKET" ] && [ "$EVENT" = schedule ]; then' in t
+
+
+def test_static_builds_and_uploads_the_tide_atlas():
+    """EOT20 (CC BY 4.0) from SEANOE, cached between runs; tide.png and tide.json go up with the art."""
+    t = text("static.yml")
+    assert "https://www.seanoe.org/data/00683/79489/data/85762.zip" in t
+    assert "actions/cache@v4" in t
+    assert '.[publish,tides]' in t
+    assert "python -m pipeline tide-atlas --eot20" in t and '--out "$RUNNER_TEMP/static"' in t

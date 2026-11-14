@@ -52,6 +52,13 @@ export function readoutFor(layer: Layer, s: Sample | null, lat: number, lon: num
     }
     case "temperature":
       return s && fin(s.airC) ? [`Air ${formatTemp(s.airC, u.temp)}`, coord] : ["No temperature data here", coord];
+    case "tide": {
+      if (!s) return ["Land — no tide data", coord];
+      if (!fin(s.tideM)) return ["No tide data here", coord];
+      const v = formatLength(Math.abs(s.tideM), u.length);
+      const signed = v.startsWith("0.0 ") ? v : `${s.tideM >= 0 ? "+" : "−"}${v}`;
+      return [`Tide ${signed}, ${s.tideRising ? "rising" : "falling"}`, coord];
+    }
   }
 }
 

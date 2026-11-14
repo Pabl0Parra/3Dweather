@@ -65,6 +65,7 @@ export type Sample = {
   windMs?: number; windFromDeg?: number; gustMs?: number; rainMmh?: number; cloudPct?: number;
   airC?: number; waveM?: number; periodS?: number; waveFromDeg?: number;
   currentMs?: number; currentToDeg?: number; seaC?: number;
+  tideM?: number; tideRising?: boolean;
 };
 
 const toDeg = (rad: number) => ((rad * 180) / Math.PI + 360) % 360;
@@ -106,10 +107,11 @@ export function sampleLayer(layer: Layer, frames: Frames, m: Grid & { gustHours?
 
 /** Particle step vector (x east, y north) for a layer, scaled to about 0..1; null without data. */
 export function flowVector(layer: Layer, frames: Frames, m: Grid, lat: number, lon: number): { u: number; v: number } | null {
-  const f = frames[layer.flow.family];
-  if (!f) return null;
-  const [bu, bv] = sampleBytes(f, m, lat, lon, layer.flow.channels);
-  if (layer.flow.family === "w") return { u: (bu - 128) / 127, v: (bv - 128) / 127 };
-  const dec = layer.flow.family === "c" ? decodeCurrent : decodeWind;
-  return { u: dec(bu) / layer.flow.scale, v: dec(bv) / layer.flow.scale };
+  const fl = layer.flow;
+  const f = fl && frames[fl.family];
+  if (!fl || !f) return null;
+  const [bu, bv] = sampleBytes(f, m, lat, lon, fl.channels);
+  if (fl.family === "w") return { u: (bu - 128) / 127, v: (bv - 128) / 127 };
+  const dec = fl.family === "c" ? decodeCurrent : decodeWind;
+  return { u: dec(bu) / fl.scale, v: dec(bv) / fl.scale };
 }

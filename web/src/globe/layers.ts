@@ -3,13 +3,15 @@
 import { decodeAirTemp, decodeHeight, decodeRain } from "./codecs";
 import { RAMP_STOPS, type Rgba } from "./ramp";
 
-export type LayerId = "rain" | "wind" | "temperature" | "waves" | "currents";
+export type LayerId = "rain" | "wind" | "temperature" | "waves" | "currents" | "tide";
 export type Family = "a" | "b" | "t" | "s" | "w" | "c";
 export type Shade =
   | { family: Family; kind: "scalar"; channel: number; decode: (b: number) => number }
-  | { family: Family; kind: "vector"; channels: [number, number] };
+  | { family: Family; kind: "vector"; channels: [number, number] }
+  /** Tide height from the constituent atlas, not from forecast frames. */
+  | { kind: "tide"; min: number; max: number };
 export type FlowSpec = { family: Family; channels: [number, number]; scale: number; seaOnly: boolean };
-export type LegendKind = "length" | "speed" | "temp" | "rain";
+export type LegendKind = "length" | "speed" | "temp" | "rain" | "tide";
 
 export type Layer = {
   id: LayerId;
@@ -24,7 +26,8 @@ export type Layer = {
   vecMax?: number;
   legend: { title: string; kind: LegendKind; max: number; sqrt: boolean };
   overLand: boolean;
-  flow: FlowSpec;
+  /** Particles; absent for layers with nothing that moves (tide). */
+  flow?: FlowSpec;
   peak: string;
   biggestLabel: string;
   credits: string;
@@ -96,9 +99,22 @@ export const LAYERS: Record<LayerId, Layer> = {
     credits: `Currents and sea temperature: E.U. Copernicus Marine Service Information (Mercator) ${OM} · ${COAST}`,
     model: "MERCATOR · COPERNICUS",
   },
+  tide: {
+    id: "tide", path: "/tide-map", title: "Tide map · 3Dweather", heading: "Tide",
+    description: "Ocean tide height around the world, hour by hour, on an interactive 3D globe.",
+    families: [], shade: { kind: "tide", min: -3, max: 3 },
+    ramp: [
+      [-3, [40, 60, 160, 225]], [-1.5, [50, 120, 200, 200]], [-0.3, [120, 180, 215, 170]], [0, [200, 205, 210, 150]],
+      [0.3, [225, 190, 140, 170]], [1.5, [225, 120, 70, 200]], [3, [170, 40, 60, 225]],
+    ],
+    legend: { title: "Tide height", kind: "tide", max: 3, sqrt: false }, overLand: false,
+    peak: "tide", biggestLabel: "Highest tide now",
+    credits: `Tide: EOT20 ocean tide model (Hart-Davis et al. 2021, DGFI-TUM, CC BY 4.0), 8 constituents · ${COAST}`,
+    model: "EOT20 · DGFI-TUM",
+  },
 };
 
-export const LAYER_IDS: LayerId[] = ["rain", "wind", "temperature", "waves", "currents"];
+export const LAYER_IDS: LayerId[] = ["rain", "wind", "temperature", "waves", "currents", "tide"];
 
 export function layerForPath(path: string): LayerId {
   const p = path.replace(/\/+$/, "");
@@ -120,7 +136,11 @@ export function colourOn(ramp: [number, Rgba][], v: number): Rgba {
 
 /** Value a ramp index stands for: the decoded byte, or a sqrt-spaced speed for vector layers. */
 export function rampValue(l: Layer, i: number): number {
-  return l.shade.kind === "scalar" ? l.shade.decode(i) : (i / 255) ** 2 * (l.vecMax ?? 1);
+  switch (l.shade.kind) {
+    case "scalar": return l.shade.decode(i);
+    case "vector": return (i / 255) ** 2 * (l.vecMax ?? 1);
+    case "tide": return l.shade.min + ((l.shade.max - l.shade.min) * i) / 255;
+  }
 }
 
 /** 256 RGBA entries for a 256x1 lookup texture. */
@@ -165,6 +185,13 @@ export function legendScale(l: Layer, u: Units): LegendScale {
       if (u.length === "ft") { unit = "in/h"; ticks = [0.02, 0.1, 0.5, 1, 2].map((i) => [i * 25.4, String(i)]); spoken = "inches per hour"; }
       else { unit = "mm/h"; ticks = [0.5, 2, 8, 25, 64].map((m) => [m, String(m)]); spoken = "millimetres per hour"; }
       break;
+    case "tide": {
+      const step = u.length === "ft" ? 3 : 1, k = u.length === "ft" ? 3.28084 : 1;
+      const sign = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : "0");
+      unit = u.length; spoken = u.length === "ft" ? "feet" : "metres";
+      ticks = [-3, -2, -1, 0, 1, 2, 3].map((n) => [(n * step) / k, sign(n * step)]);
+      break;
+    }
   }
   return { title: l.legend.title, unit, ticks, pos, spoken };
 }

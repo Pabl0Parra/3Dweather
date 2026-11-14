@@ -4,6 +4,7 @@ python -m pipeline build --run YYYYMMDDHH --cache DIR --out DIR [--latest] [--pr
 python -m pipeline static --cache DIR --out DIR
 python -m pipeline cycle --cache DIR --out DIR --store (r2|dir:PATH) [--run YYYYMMDDHH]
 python -m pipeline upload --src DIR --prefix KEY --max-age SECONDS --store (r2|dir:PATH)
+python -m pipeline tide-atlas --eot20 ZIP_OR_DIR --out DIR
 """
 from __future__ import annotations
 
@@ -49,7 +50,16 @@ def main(argv: list[str] | None = None) -> int:
     up.add_argument("--prefix", required=True)
     up.add_argument("--max-age", required=True, type=int)
     up.add_argument("--store", required=True)
+    tide = sub.add_parser("tide-atlas", help="build tide.png and tide.json from EOT20")
+    tide.add_argument("--eot20", required=True, type=Path, help="the downloaded EOT20 zip, or a folder of *_ocean_eot20.nc")
+    tide.add_argument("--out", required=True, type=Path)
     args = parser.parse_args(argv)
+
+    if args.command == "tide-atlas":
+        from .tide_atlas import build_tide_atlas
+        build_tide_atlas(args.eot20, args.out)
+        print(args.out)
+        return 0
 
     if args.command == "cycle":
         return cycle_mod.cycle(datetime.now(timezone.utc), args.cache, args.out, store_from_arg(args.store),

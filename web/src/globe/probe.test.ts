@@ -36,3 +36,15 @@ test("no NaN at the limb", () => {
   expect(readoutLines(null, 90, 180, DEFAULT_UNITS).join(" ")).not.toMatch(/NaN/);
   expect(readoutLines({ heightM: NaN, periodS: NaN, fromDeg: NaN, u: 0, v: 0 }, 0, 0, DEFAULT_UNITS).join(" ")).not.toMatch(/NaN/);
 });
+
+import { readoutFor } from "./probe";
+import { LAYERS } from "./layers";
+
+test("tide readout: signed height and direction; land and no-data cases", () => {
+  const t = LAYERS.tide;
+  expect(readoutFor(t, { tideM: 1.23, tideRising: true }, 45, -65.5, DEFAULT_UNITS)[0]).toBe("Tide +1.2 m, rising");
+  expect(readoutFor(t, { tideM: -0.84, tideRising: false }, 45, -65.5, DEFAULT_UNITS)[0]).toBe("Tide −0.8 m, falling");
+  expect(readoutFor(t, { tideM: -0.84, tideRising: false }, 45, -65.5, { ...DEFAULT_UNITS, length: "ft" })[0]).toBe("Tide −2.8 ft, falling");
+  expect(readoutFor(t, null, 40.4, -3.7, DEFAULT_UNITS)[0]).toBe("Land — no tide data");
+  expect(readoutFor(t, {}, 0, 0, DEFAULT_UNITS)[0]).toBe("No tide data here");
+});

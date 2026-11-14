@@ -35,3 +35,6 @@ web/public/wx/
 web/public/assets/globe/
 web/test-results/
 web/playwright-report/
+
+# EOT20 tide atlas download (CC BY 4.0, 2 GB; fetched by the tide atlas tool)
+eot20/

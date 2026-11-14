@@ -13,6 +13,7 @@ dependencies = ["numpy", "omfiles", "pillow"]
 [project.optional-dependencies]
 dev = ["pytest"]
 publish = ["boto3==1.42.97"]
+tides = ["h5py==3.16.0"]
 
 [tool.setuptools]
 packages = ["pipeline", "pipeline.sources"]
