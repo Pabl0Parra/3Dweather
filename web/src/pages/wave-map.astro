@@ -1,0 +1,25 @@
+---
+import "../styles/globe.css";
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wave map · 3Dweather</title>
+    <meta name="description" content="Forecast wave height for the next seven days on an interactive 3D globe." />
+  </head>
+  <body>
+    <main class="wave-page">
+      <section class="globe" id="globe" aria-label="Interactive globe showing forecast wave height"></section>
+      <noscript><p class="credits">The wave map needs JavaScript and WebGL.</p></noscript>
+      <p class="credits">
+        Waves: NOAA GFS-Wave via <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0) · Coastlines: Natural Earth
+      </p>
+    </main>
+    <script>
+      import { initGlobe } from "../globe/globe";
+      initGlobe(document.getElementById("globe")!);
+    </script>
+  </body>
+</html>
