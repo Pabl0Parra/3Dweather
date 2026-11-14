@@ -33,16 +33,18 @@ NAN16 = 32767
 FRAME_TIMES = [RUN + timedelta(hours=h) for h in range(0, 169, 3)]
 # Rain may be an average over the frame step, so keep every hour GFS has.
 HOURLY_TIMES = [RUN + timedelta(hours=h) for h in range(0, 172)]  # 171: the step after hour 168
+# Regional maps (phase 6): wind and cloud every hour for 72 h, plus the steps rain reads after it.
+REGION_TIMES = sorted(set(FRAME_TIMES) | {RUN + timedelta(hours=h) for h in range(0, 75)})
 
 # model -> (run directory, {variable: times}) for remote subsetting
 SUBSET = {
     "ncep_gfs013": ("2026/11/13/0600Z", {
-        "wind_u_component_10m": FRAME_TIMES,
-        "wind_v_component_10m": FRAME_TIMES,
+        "wind_u_component_10m": REGION_TIMES,
+        "wind_v_component_10m": REGION_TIMES,
         "cloud_cover": FRAME_TIMES,
-        "cloud_cover_low": FRAME_TIMES,  # the cloud layer is built from low, mid and high (phase 3a)
-        "cloud_cover_mid": FRAME_TIMES,
-        "cloud_cover_high": FRAME_TIMES,
+        "cloud_cover_low": REGION_TIMES,  # the cloud layer is built from low, mid and high (phase 3a)
+        "cloud_cover_mid": REGION_TIMES,
+        "cloud_cover_high": REGION_TIMES,
         "temperature_2m": FRAME_TIMES,
         "precipitation": HOURLY_TIMES,
         "showers": HOURLY_TIMES,
