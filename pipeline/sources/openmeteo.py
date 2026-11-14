@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import gc
 import json
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -19,6 +20,7 @@ import omfiles
 from ..regrid import ReducedGaussian, SourceGrid
 
 BUCKET_URL = "https://openmeteo.s3.amazonaws.com/data_spatial"
+RETRY_DELAYS = (5, 20, 60)  # seconds before each retry of a failed download
 
 _MERCATOR = SourceGrid(lat0=-79.958336, lon0=-179.95833, dlat=1 / 12, dlon=1 / 12)
 
@@ -41,8 +43,26 @@ class VariableAbsent(RunIncomplete):
     (GFS has no cloud cover or rain at the analysis hour)."""
 
 
+def _transient(exc: BaseException) -> bool:
+    """Worth another try: network errors, timeouts, short reads and server errors (not 403/404)."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code >= 500 or exc.code == 429
+    return isinstance(exc, OSError)  # URLError, ConnectionResetError, TimeoutError, short download
+
+
 def http_fetch(url: str, dest: Path) -> None:
-    """Download to `<dest>.part`, then rename, so a broken download leaves no file."""
+    """Download with retries (RETRY_DELAYS); a broken download leaves no file."""
+    for delay in (*RETRY_DELAYS, None):
+        try:
+            return _fetch_once(url, dest)
+        except Exception as exc:
+            if delay is None or not _transient(exc):
+                raise
+            time.sleep(delay)
+
+
+def _fetch_once(url: str, dest: Path) -> None:
+    """Download to `<dest>.part`, then rename."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
     try:
@@ -140,6 +160,18 @@ class OpenMeteoRun:
             return self.field(variable, valid_time)
         except VariableAbsent:
             return None
+
+    def evict_before(self, t: datetime) -> None:
+        """Delete downloaded files for valid times before t (a run needs ~16 GB otherwise).
+        Saved inputs (.npz) and meta.json stay."""
+        cutoff = _stamp(t)
+        for om in self.dir.glob("*.om"):
+            if om.stem < cutoff:  # stamps sort as text
+                om.unlink(missing_ok=True)
+
+    def valid_times(self) -> list[datetime]:
+        return sorted(datetime.strptime(v, "%Y-%m-%dT%H:%MZ").replace(tzinfo=timezone.utc)
+                      for v in self.meta().get("valid_times", []))
 
     def has_time(self, valid_time: datetime) -> bool:
         return valid_time.strftime("%Y-%m-%dT%H:%MZ") in self.meta().get("valid_times", [])

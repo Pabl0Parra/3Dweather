@@ -32,12 +32,19 @@ class FakeModel:
         self.run, self.variables, self.times = run, variables, list(times)
         self.values = values or {}
         self.absent = set(absent)  # (variable, time) pairs whose file lacks the variable
+        self.evicted: list[datetime] = []
 
     def meta(self):
         return {"completed": True, "variables": list(self.variables), "valid_times": [iso(t) for t in self.times]}
 
     def has_time(self, t):
         return t in self.times
+
+    def valid_times(self):
+        return sorted(self.times)
+
+    def evict_before(self, t):
+        self.evicted.append(t)
 
     def field(self, variable, t):
         if t not in self.times or variable not in self.variables:
@@ -58,7 +65,8 @@ def frames(n=57):
     return [RUN + timedelta(hours=3 * j) for j in range(n)]
 
 
-def fake_sources(wave_frames=57, gfs_frames=57, ifs_hours=168):
+def fake_sources(wave_frames=57, gfs_frames=57, ifs_hours=168, ifs_times=None, ifs_vars=("pressure_msl", "wind_gusts_10m"),
+                 ifs_pressure=101500.0):
     hourly = [RUN + h * H for h in range(0, 172)]
     wave = FakeModel(RUN, ["wave_height", "wave_period", "wave_direction"], frames(wave_frames),
                      {"wave_height": lambda t: 2.0 + 0.1 * ((t - RUN) / H) / 3, "wave_period": 10.0,
@@ -72,8 +80,9 @@ def fake_sources(wave_frames=57, gfs_frames=57, ifs_hours=168):
     g25 = FakeModel(RUN, ["cape", "lifted_index", "pressure_msl"], frames(),
                     {"cape": 1000.0, "lifted_index": -2.0, "pressure_msl": 1000.0})
     ifs_run = RUN - 6 * H
-    ifs = FakeModel(ifs_run, ["pressure_msl", "wind_gusts_10m"], [t for t in frames() if t - RUN <= ifs_hours * H],
-                    {"pressure_msl": 101500.0, "wind_gusts_10m": 20.0})  # IFS pressure is in Pa
+    times = ifs_times if ifs_times is not None else [t for t in frames() if t - RUN <= ifs_hours * H]
+    ifs = FakeModel(ifs_run, list(ifs_vars), times,
+                    {"pressure_msl": ifs_pressure, "wind_gusts_10m": 20.0})  # IFS pressure is in Pa
     day = datetime(2026, 11, 12, tzinfo=timezone.utc)
     ocean_times = [day + h * H for h in range(0, 24 * 10)]
     cur = FakeModel(day, ["ocean_u_current", "ocean_v_current"], ocean_times,
@@ -144,7 +153,7 @@ def test_missing_wave_frame_refuses_to_build(tmp_path):
 
 
 def test_cli_exit_codes(tmp_path, monkeypatch, capsys):
-    def boom(run, cache_dir, out_dir, sources=None):
+    def boom(run, cache_dir, out_dir, **kw):
         raise RunIncomplete("ncep_gfs013 run 2026-11-13T06:00Z is still being published")
 
     monkeypatch.setattr("pipeline.__main__.build_run", boom)
@@ -191,3 +200,47 @@ def test_write_latest(tmp_path):
     assert json.loads((tmp_path / "latest.json").read_text()) == {
         "run": "2026-11-13T06:00Z", "dir": "2026111306", "built": "2026-11-14T09:30:00Z"}
     assert not (tmp_path / "latest.json.part").exists()
+
+
+# --- final review fixes ---
+
+def test_long_ifs_run_is_interpolated_between_6_hourly_steps(tmp_path):
+    """IFS 00Z/12Z runs go 6-hourly after their hour 144: frames between steps take the
+    linear mean in time, not GFS (the pressure layer flickered otherwise)."""
+    steps = [RUN + h * H for h in range(0, 139, 3)] + [RUN + h * H for h in range(144, 169, 6)]
+    pa = lambda t: 99000.0 + 10.0 * ((t - RUN) / H)  # 0.1 hPa per hour
+    out = build_run(RUN, tmp_path / "c", tmp_path / "wx", ice=NO_ICE,
+                    sources=fake_sources(ifs_times=steps, ifs_pressure=pa))
+    for slot, hour in ((0, 144), (1, 147), (3, 153)):  # frames 48, 49, 51
+        got = unpack_frame(Image.open(out / "globe-b6.webp"), slot)[..., 1]
+        assert (got == encode_pressure(np.array([990.0 + 0.1 * hour]))[0]).all(), hour
+    low = json.loads((out / "globe.json").read_text())["peaks"]["low"]
+    assert low[147][0] == round(990.0 + 0.1 * 147, 1) and low[141][0] == round(990.0 + 0.1 * 141, 1)
+
+
+def test_ifs_without_pressure_refuses_before_writing(tmp_path):
+    with pytest.raises(RunIncomplete, match="ifs pressure_msl"):
+        build_run(RUN, tmp_path / "c", tmp_path / "wx", ice=NO_ICE, sources=fake_sources(ifs_vars=("wind_gusts_10m",)))
+    assert not (tmp_path / "wx").exists() or list((tmp_path / "wx").iterdir()) == []
+
+
+def test_prune_evicts_inputs_once_no_later_frame_needs_them(tmp_path):
+    src = fake_sources()
+    build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=src, ice=NO_ICE, prune=True)
+    last = RUN + 168 * H
+    for name in ("wave", "gfs", "g25", "ifs", "cur", "sst"):
+        ev = getattr(src, name).evicted
+        assert ev and ev == sorted(ev) and ev[-1] > last, name  # everything goes at the end
+    # while frames remain, nothing a later frame reads is evicted
+    gfs_cuts = src.gfs.evicted[:-1]
+    assert all(c <= RUN + (3 * j + 2) * H for j, c in enumerate(gfs_cuts))  # rain reads (t-1h, t+1h]
+    assert all(c <= RUN + 3 * j * H - 3 * H for j, c in enumerate(src.ifs.evicted[:-1]))
+
+
+
+def test_cli_prune_is_opt_in(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr("pipeline.__main__.build_run", lambda run, cache, out, **kw: seen.append(kw) or out)
+    main(["build", "--run", "2026111306", "--cache", str(tmp_path), "--out", str(tmp_path)])
+    main(["build", "--run", "2026111306", "--cache", str(tmp_path), "--out", str(tmp_path), "--prune"])
+    assert seen == [{"prune": False}, {"prune": True}]

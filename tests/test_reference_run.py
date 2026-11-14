@@ -183,10 +183,11 @@ def test_rain_peaks_match_outside_hours_72_to_119(built):
     assert len(bad) <= 3, bad
 
 
-def test_low_pressure_peaks_match_while_ifs_runs(built):
+def test_low_pressure_peaks_match_every_hour(built):
+    """Past T+138 the long IFS run steps 6-hourly; odd frames are its linear mean in time (spec §9)."""
     mine, ref = peak_series(built, "low")
-    assert all(abs(mine[h][0] - ref[h][0]) <= 0.5 for h in range(0, 139))
-    assert peak_agreement(built, "low", range(3, 139)) == []
+    assert all(abs(mine[h][0] - ref[h][0]) <= 0.5 for h in range(0, 169))
+    assert peak_agreement(built, "low", range(3, 169)) == []
 
 
 def test_manifest_fields_identical(built):

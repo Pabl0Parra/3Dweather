@@ -1,6 +1,6 @@
 """Command line.
 
-python -m pipeline build --run YYYYMMDDHH --cache DIR --out DIR [--latest]
+python -m pipeline build --run YYYYMMDDHH --cache DIR --out DIR [--latest] [--prune]
 python -m pipeline static --cache DIR --out DIR
 """
 from __future__ import annotations
@@ -30,6 +30,8 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--cache", required=True, type=Path, help="folder for downloaded inputs")
     build.add_argument("--out", required=True, type=Path, help="folder to write the run into")
     build.add_argument("--latest", action="store_true", help="also point latest.json at this run")
+    build.add_argument("--prune", action="store_true",
+                       help="delete each downloaded input once used (CI: a run needs ~16 GB otherwise)")
     static = sub.add_parser("static", help="build the land mask and coastline from Natural Earth")
     static.add_argument("--cache", required=True, type=Path, help="folder for downloaded Natural Earth files")
     static.add_argument("--out", required=True, type=Path, help="folder to write land-mask.png and coast.json")
@@ -40,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
         print(args.out)
         return 0
     try:
-        out = build_run(args.run, args.cache, args.out)
+        out = build_run(args.run, args.cache, args.out, prune=args.prune)
     except RunIncomplete as exc:
         print(f"not built: {exc}", file=sys.stderr)
         return 2

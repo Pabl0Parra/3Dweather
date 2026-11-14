@@ -269,3 +269,75 @@ def test_daily_run_walks_back_to_a_completed_run(tmp_path):
 def test_daily_run_gives_up_after_four_days(tmp_path):
     with pytest.raises(RunIncomplete):
         resolve_daily_run("meteofrance_currents", RUN, tmp_path, MetaFetch([]))
+
+
+# --- final review: download retries, cache eviction ---
+
+@pytest.fixture(autouse=True)
+def no_retry_wait(monkeypatch):
+    monkeypatch.setattr(openmeteo, "RETRY_DELAYS", (0, 0, 0))
+
+
+class Body:
+    def __init__(self, data=b"ok"):
+        self.data, self.headers = data, {"Content-Length": str(len(data))}
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def read(self, n):
+        data, self.data = self.data, b""
+        return data
+
+
+def test_http_fetch_retries_transient_failures(tmp_path, monkeypatch):
+    outcomes = [urllib.error.URLError("reset"), urllib.error.HTTPError("u", 503, "Slow Down", None, None), Body(b"done")]
+    calls = []
+
+    def urlopen(url, timeout):
+        calls.append(url)
+        item = outcomes.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    monkeypatch.setattr(openmeteo.urllib.request, "urlopen", urlopen)
+    http_fetch("https://example.invalid/f.om", tmp_path / "f.om")
+    assert (tmp_path / "f.om").read_bytes() == b"done" and len(calls) == 3
+
+
+def test_http_fetch_does_not_retry_missing_files(tmp_path, monkeypatch):
+    calls = []
+
+    def urlopen(url, timeout):
+        calls.append(url)
+        raise urllib.error.HTTPError(url, 404, "Not Found", None, None)
+
+    monkeypatch.setattr(openmeteo.urllib.request, "urlopen", urlopen)
+    with pytest.raises(urllib.error.HTTPError):
+        http_fetch("https://example.invalid/f.om", tmp_path / "f.om")
+    assert len(calls) == 1
+
+
+def test_http_fetch_gives_up_after_the_last_attempt(tmp_path, monkeypatch):
+    calls = []
+
+    def urlopen(url, timeout):
+        calls.append(url)
+        raise TimeoutError("stalled")
+
+    monkeypatch.setattr(openmeteo.urllib.request, "urlopen", urlopen)
+    with pytest.raises(TimeoutError):
+        http_fetch("https://example.invalid/f.om", tmp_path / "f.om")
+    assert len(calls) == len(openmeteo.RETRY_DELAYS) + 1
+
+
+def test_evict_before_deletes_only_older_downloaded_files(tmp_path):
+    src = OpenMeteoRun(MODEL, RUN, tmp_path, fetch=FakeFetch())
+    src.dir.mkdir(parents=True)
+    for stamp in ("2026-11-13T0600", "2026-11-13T0900", "2026-11-13T1200"):
+        (src.dir / f"{stamp}.om").write_bytes(b"x")
+    (src.dir / "wave_height").mkdir()
+    (src.dir / "wave_height" / "2026-11-13T0600.npz").write_bytes(b"x")  # saved inputs are kept
+    (src.dir / "meta.json").write_text("{}")
+    src.evict_before(datetime(2026, 11, 13, 12, tzinfo=timezone.utc))
+    assert sorted(p.name for p in src.dir.glob("*.om")) == ["2026-11-13T1200.om"]
+    assert (src.dir / "wave_height" / "2026-11-13T0600.npz").exists() and (src.dir / "meta.json").exists()

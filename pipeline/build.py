@@ -26,6 +26,8 @@ GFS_VARS = ("wind_u_component_10m", "wind_v_component_10m", "temperature_2m")
 CLOUD_VARS = ("cloud_cover_low", "cloud_cover_mid", "cloud_cover_high")
 G25_VARS = ("cape", "lifted_index", "pressure_msl")
 IFS_LAG = timedelta(hours=6)
+IFS_GAP = timedelta(hours=6)  # long IFS runs step 6-hourly after their hour 144
+FAR = timedelta(days=60)      # an eviction cutoff past every input of a run
 PA_PER_HPA = 100.0  # IFS pressure is stored in Pa, GFS in hPa
 
 
@@ -63,7 +65,8 @@ def _check_complete(s: RunSources, run: datetime) -> None:
         ("wave", s.wave, WAVE_VARS, frame_times),
         ("gfs", s.gfs, GFS_VARS + CLOUD_VARS + ("precipitation",), frame_times),
         ("gfs025", s.g25, G25_VARS, frame_times),
-        ("ifs", s.ifs, ("wind_gusts_10m",), [t for t in frame_times if t - run <= timedelta(hours=GUST_HOURS)]),
+        ("ifs", s.ifs, ("wind_gusts_10m", "pressure_msl"),
+         [t for t in frame_times if t - run <= timedelta(hours=GUST_HOURS)]),
         ("currents", s.cur, ("ocean_u_current", "ocean_v_current"), ocean_times),
         ("sst", s.sst, ("sea_surface_temperature",), ocean_times),
     ]
@@ -100,24 +103,50 @@ def _on_globe(src, variable: str, t: datetime) -> np.ndarray:
     return regrid(src.field(variable, t), src.source_grid, GLOBE)
 
 
+def _pressure(s: RunSources, t: datetime) -> np.ndarray:
+    """IFS at t; between two IFS steps up to 6 h apart, their linear mean in time (spec §9);
+    past the IFS run's end, GFS 0.25° of run T (spec §4). hPa."""
+    if s.ifs.has_time(t):
+        return _on_globe(s.ifs, "pressure_msl", t) / PA_PER_HPA
+    times = s.ifs.valid_times()
+    before = max((u for u in times if u < t), default=None)
+    after = min((u for u in times if u > t), default=None)
+    if before is not None and after is not None and after - before <= IFS_GAP:
+        w = (t - before) / (after - before)
+        a, b = (_on_globe(s.ifs, "pressure_msl", u) for u in (before, after))
+        return (a * (1 - w) + b * w) / PA_PER_HPA
+    return _on_globe(s.g25, "pressure_msl", t)
+
+
+def _evict(s: RunSources, t_next: datetime | None, run: datetime) -> None:
+    """Drop downloaded inputs no frame from t_next on can read (rain reads back 1 h, IFS
+    interpolation up to 6 h); with no next frame, everything atmospheric."""
+    if t_next is None:
+        for src in (s.wave, s.gfs, s.g25, s.ifs):
+            src.evict_before(run + FAR)
+        return
+    s.wave.evict_before(t_next)
+    s.g25.evict_before(t_next)
+    s.gfs.evict_before(t_next - timedelta(hours=1))
+    s.ifs.evict_before(t_next - IFS_GAP)
+
+
 def _atmosphere(s: RunSources, precip: _GfsPrecip, run: datetime, t: datetime) -> dict:
     u, v, temp = (_on_globe(s.gfs, name, t) for name in GFS_VARS)
     layers = [s.gfs.field_or_none(name, t) for name in CLOUD_VARS]
     cloud = None if any(a is None for a in layers) else cloud_from_layers(
         *(regrid(a, s.gfs.source_grid, GLOBE) for a in layers))
-    if s.ifs.has_time(t):
-        pressure = _on_globe(s.ifs, "pressure_msl", t) / PA_PER_HPA
-    else:  # past the IFS run's end: GFS 0.25° of run T fills in (spec §4)
-        pressure = _on_globe(s.g25, "pressure_msl", t)
+    pressure = _pressure(s, t)
     gust = _on_globe(s.ifs, "wind_gusts_10m", t) if t - run <= timedelta(hours=GUST_HOURS) else None
     return {"u": u, "v": v, "temp": temp, "cloud": cloud, "pressure": pressure, "gust": gust,
             "rain": rain_rate(precip, t)}
 
 
 def build_run(run: datetime, cache_dir: Path, out_dir: Path, sources: RunSources | None = None,
-              ice: np.ndarray | None = None) -> Path:
+              ice: np.ndarray | None = None, prune: bool = False) -> Path:
     """Write out_dir/<YYYYMMDDHH>/ with globe-{a,b,t,s,w}0..6.webp, globe-c.webp and globe.json.
-    Nothing is written unless the whole run is available; the folder appears only when complete."""
+    Nothing is written unless the whole run is available; the folder appears only when complete.
+    prune: delete each downloaded input once no later frame needs it (spec §5; CI disk)."""
     s = sources or open_sources(run, cache_dir)
     _check_complete(s, run)
     if ice is None:  # Natural Earth glaciated areas, cached next to the model inputs
@@ -151,6 +180,8 @@ def build_run(run: datetime, cache_dir: Path, out_dir: Path, sources: RunSources
                 peaks["low"].append(peak(f["pressure"], mode="min"))
                 if f["gust"] is not None:
                     peaks["gust"].append(peak(f["gust"]))
+                if prune:
+                    _evict(s, frame_time(run, j + 1) if j + 1 < FRAMES else None, run)
             for fam, frames in sheets.items():
                 save_sprite(pack_chunk(frames), tmp / f"globe-{fam}{chunk}.webp")
 
@@ -165,6 +196,10 @@ def build_run(run: datetime, cache_dir: Path, out_dir: Path, sources: RunSources
             coastal = regrid(np.isfinite(sst).astype(np.float32), s.sst.source_grid, GLOBE) <= 0.999
             current.append(peak(np.hypot(gu, gv), exclude=coastal))
             sea_hot.append(peak(regrid(sst, s.sst.source_grid, GLOBE), exclude=coastal))
+            if prune:
+                cut = ocean_time(run, k + 1) if k + 1 < CURRENT_FRAMES else run + FAR
+                s.cur.evict_before(cut)
+                s.sst.evict_before(cut)
         save_sprite(pack_ocean(ocean), tmp / "globe-c.webp")
 
         manifest = {

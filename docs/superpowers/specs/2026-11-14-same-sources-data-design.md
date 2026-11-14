@@ -96,10 +96,12 @@ Pressure and gust coverage (observed on four reference runs, 2026-11-13/14):
   18Z runs, which end 144 h after their own start (138 h after T).
 - Gusts are published only to 84 h (`gustHours: 84`) on every run. That is
   where the IFS run stops being hourly; we do the same and stop gusts there.
-- Pressure covers all 168 h on every run, so something fills the hours IFS
-  does not reach. The filler is not visible from outside. Designer's call: fill
-  from GFS `pressure_msl` of run T (`ncep_gfs025`), and check it against a
-  fresh 00Z or 12Z reference capture in phase 3.
+- Pressure covers all 168 h on every run. For T = 06Z/18Z the IFS run is a long
+  00Z/12Z run that steps 6-hourly after its own hour 144; frames between two
+  steps take their linear mean in time (matched run 2026111306 to 0.1 hPa at
+  every odd frame 141-165). For T = 00Z/12Z the short IFS run ends at T+138;
+  designer's call: fill from GFS `pressure_msl` of run T (`ncep_gfs025`). That
+  fallback is unchecked until a 00Z or 12Z reference capture exists.
 
 Grids as found in the bucket: GFS 13 km is 3072×1536 regular; GFS 0.25° and
 GFS-Wave are 1440×721; IFS is the O1280 reduced Gaussian grid (6,599,680
@@ -327,9 +329,9 @@ These cannot be matched from outside; each is our own rule, documented as such.
     Earth glaciated areas, which matched every hour exactly. Sea temperature
     values agree every hour; it is taken over open sea only, and where two spots
     tie the cell can differ. Gusts are within a median of 1.2 m/s. Low pressure
-    agrees for hours 0-138; past 138 h it comes from our GFS filler, and the
-    reference's filler gives lower values there (up to 14 hPa), so its filler
-    is still unknown. Rain agrees except at hours 72-119, where neither the
+    agrees at every hour once frames between the long IFS run's 6-hourly steps
+    are interpolated in time (the first draft filled them from GFS, which made
+    pressure flicker frame to frame). Rain agrees except at hours 72-119, where neither the
     hourly nor a 3-hourly reading reproduces the reference; the inputs were
     saved a day after the reference built the run.
 - **Tide test.** New York City, November 2026: our high and low waters against
