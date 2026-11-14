@@ -37,25 +37,36 @@ function graticule(): number[][] {
 
 const GRID = graticule();
 
-function stroke(ctx: CanvasRenderingContext2D, v: View, w: number, h: number, lines: number[][]): void {
+function stroke(ctx: CanvasRenderingContext2D, v: View, w: number, h: number, lines: number[][], reveal = 1): void {
   ctx.beginPath();
-  for (const line of lines)
+  for (const full of lines) {
+    // Intro: each line traces itself from its start; keep whole lon/lat pairs.
+    const line = reveal >= 1 ? full : full.slice(0, 2 * Math.ceil((full.length / 2) * reveal));
     for (const run of visibleRuns(v, w, h, line)) {
       if (run.length < 2) continue;
       ctx.moveTo(run[0][0], run[0][1]);
       for (let k = 1; k < run.length; k++) ctx.lineTo(run[k][0], run[k][1]);
     }
+  }
   ctx.stroke();
 }
 
 /** Graticule every 30 degrees, then the coastline. Coordinates are CSS pixels. */
-export function drawOverlay(ctx: CanvasRenderingContext2D, v: View, w: number, h: number, coast: number[][]): void {
+export function drawOverlay(
+  ctx: CanvasRenderingContext2D, v: View, w: number, h: number, coast: number[][],
+  intro: { body: number; coast: number } = { body: 1, coast: 1 },
+): void {
   ctx.clearRect(0, 0, w, h);
   ctx.lineJoin = "round";
   ctx.lineWidth = 1;
+  ctx.globalAlpha = intro.body;
   ctx.strokeStyle = GRATICULE;
   stroke(ctx, v, w, h, GRID);
+  ctx.globalAlpha = 1;
+  if (intro.coast <= 0) return;
   ctx.strokeStyle = COAST;
   ctx.lineWidth = v.zoom > 4 ? 1.2 : 0.8;
-  stroke(ctx, v, w, h, coast);
+  if (intro.coast < 1) { ctx.shadowColor = "#3fe0ff"; ctx.shadowBlur = 6; } // traced in light
+  stroke(ctx, v, w, h, coast, intro.coast);
+  ctx.shadowBlur = 0;
 }

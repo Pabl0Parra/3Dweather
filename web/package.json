@@ -14,5 +14,8 @@
     "astro": "7.4.2",
     "typescript": "5.9.3",
     "vitest": "4.1.12"
+  },
+  "dependencies": {
+    "motion": "14.9.0"
   }
 }

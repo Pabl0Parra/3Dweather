@@ -4,6 +4,8 @@ import { clampView, rotateBy, unproject, type View } from "./view";
 type Vec = { x: number; y: number };
 
 export const WHEEL_HINT = "Click the map to zoom with the wheel";
+/** Pointer travel (CSS px) below which a press counts as a tap. */
+export const TAP_SLOP = 4;
 
 /** One frame of drag inertia; null once it has died out. */
 export function stepInertia(vel: Vec): Vec | null {
@@ -20,8 +22,14 @@ export function attachGestures(
   get: () => View,
   set: (v: View) => void,
   size: () => { w: number; h: number },
+  onTap?: (x: number, y: number) => void,
+  onDrag?: () => void,
 ): () => void {
   const pointers = new Map<number, Vec>();
+  // Tap detection: total path length since pointerdown, so out-and-back counts as a drag.
+  let travel = 0;
+  let multi = false;
+  let downAt: Vec = { x: 0, y: 0 };
   let vel: Vec = { x: 0, y: 0 };
   let lastMove = 0;
   let inertiaId = 0;
@@ -56,7 +64,8 @@ export function attachGestures(
     el.setPointerCapture?.(e.pointerId);
     pointers.set(e.pointerId, local(e));
     vel = { x: 0, y: 0 };
-    if (pointers.size === 2) pinchDist = spread();
+    if (pointers.size === 1) { travel = 0; multi = false; downAt = local(e); }
+    if (pointers.size === 2) { pinchDist = spread(); multi = true; }
   };
 
   const onMove = (e: PointerEvent) => {
@@ -71,6 +80,9 @@ export function attachGestures(
       return;
     }
     const dx = p.x - prev.x, dy = p.y - prev.y;
+    const before = travel;
+    travel += Math.hypot(dx, dy);
+    if (before < TAP_SLOP && travel >= TAP_SLOP) onDrag?.();
     rotate(dx, dy);
     const now = performance.now();
     const dt = Math.max(1, now - lastMove);
@@ -82,6 +94,7 @@ export function attachGestures(
   const onUp = (e: PointerEvent) => {
     if (!pointers.delete(e.pointerId)) return;
     if (pointers.size > 0) { pinchDist = 0; return; }
+    if (e.type === "pointerup" && !multi && travel < TAP_SLOP) { onTap?.(downAt.x, downAt.y); return; }
     if (performance.now() - lastMove > 80) return; // released after holding still
     const tick = () => {
       const next = stepInertia(vel);

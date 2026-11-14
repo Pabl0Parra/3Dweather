@@ -18,6 +18,7 @@ uniform vec4 uGrid;         // west, dlon, north, dlat (degrees)
 uniform vec2 uGridSize;     // cells
 uniform sampler2D uFrameA, uFrameB, uLand, uRamp;
 uniform float uMix, uHasData;
+uniform float uBody;        // intro: globe body and limb fade in
 
 const float PI = 3.141592653589793;
 const vec3 SEA = vec3(8.0, 26.0, 46.0) / 255.0;
@@ -44,7 +45,7 @@ void main() {
   float rho = length(p);
   if (rho > 1.0) {
     float edge = (rho - 1.0) * uRadius;
-    float a = exp(-edge / 7.0) * 0.55;
+    float a = exp(-edge / 7.0) * 0.55 * uBody;
     gl_FragColor = vec4(GLOW * a, a);
     return;
   }
@@ -68,7 +69,7 @@ void main() {
   col = mix(col, LAND, step(0.5, land));
   float shade = 0.72 + 0.28 * cc;            // gentle darkening towards the limb
   float rim = smoothstep(0.86, 1.0, rho) * 0.35;
-  gl_FragColor = vec4(col * shade + GLOW * rim, 1.0);
+  gl_FragColor = vec4((col * shade + GLOW * rim) * uBody, uBody);
 }
 `;
 
@@ -103,7 +104,7 @@ export class GlobeRenderer {
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) ?? "link error");
     this.prog = prog;
     gl.useProgram(prog);
-    for (const n of ["uCentre", "uRadius", "uLat0", "uLon0", "uGrid", "uGridSize", "uFrameA", "uFrameB", "uLand", "uRamp", "uMix", "uHasData"])
+    for (const n of ["uCentre", "uRadius", "uLat0", "uLon0", "uGrid", "uGridSize", "uFrameA", "uFrameB", "uLand", "uRamp", "uMix", "uHasData", "uBody"])
       this.u[n] = gl.getUniformLocation(prog, n);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -179,6 +180,9 @@ export class GlobeRenderer {
     this.mix = mix;
   }
 
+  /** Intro fade of the globe body and limb, 0..1. */
+  body = 1;
+
   draw(v: View, cssW: number, cssH: number, dpr: number): void {
     const gl = this.gl, c = this.canvas;
     const w = Math.round(cssW * dpr), h = Math.round(cssH * dpr);
@@ -195,6 +199,7 @@ export class GlobeRenderer {
     gl.uniform2f(this.u.uGridSize, g?.w ?? 1, g?.h ?? 1);
     gl.uniform1f(this.u.uMix, this.mix);
     gl.uniform1f(this.u.uHasData, this.hasData ? 1 : 0);
+    gl.uniform1f(this.u.uBody, this.body);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 }

@@ -8,7 +8,7 @@ const HAS_DATA = existsSync(fileURLToPath(new URL("../../public/wx/latest.json",
 test.skip(!HAS_DATA, "web/public/wx/latest.json missing: build the dev data first");
 
 async function open(page: Page, hash: string) {
-  await page.goto(`/wave-map?debug${hash}`);
+  await page.goto(`/wave-map?debug&nosplash${hash}`);
   await page.waitForFunction(() => (window as any).__globe?.ready === true, null, { timeout: 30_000 });
   await setHour(page, 0);
 }
@@ -59,7 +59,7 @@ test("no seam at the antimeridian", async ({ page }) => {
 test("a failed sprite shows the retry notice and still draws land", async ({ page }) => {
   // Every chunk: the timeline opens at the current hour, which may be in any chunk.
   await page.route("**/globe-w*.webp", (route) => route.abort());
-  await page.goto("/wave-map?debug#40.4,-3.7,4");
+  await page.goto("/wave-map?debug&nosplash#40.4,-3.7,4");
   await expect(page.getByText("Couldn't load the forecast")).toBeVisible({ timeout: 15_000 });
   await page.waitForFunction(() => (window as any).__globe?.drawn === true);
   const [r, g, b] = await pixel(page);
@@ -123,9 +123,100 @@ test("without WebGL the page says so instead of staying blank", async ({ page })
       return type.startsWith("webgl") ? null : (orig as any).call(this, type, ...rest);
     };
   });
-  await page.goto("/wave-map#20,0,1");
+  await page.goto("/wave-map?nosplash#20,0,1");
   await expect(page.locator("#globe")).toContainText("needs WebGL");
   expect(errors).toEqual([]);
+});
+
+test("particle trails are drawn over the sea", async ({ page }) => {
+  await open(page, "#20,-30,1");
+  await page.waitForTimeout(300);
+  const lit = await page.evaluate(() => {
+    const c = document.querySelector<HTMLCanvasElement>("canvas.globe-flow")!;
+    const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+    return n;
+  });
+  expect(lit).toBeGreaterThan(200);
+});
+
+test("units menu switches the legend to feet and remembers it", async ({ page }) => {
+  await open(page, "#20,0,1");
+  await page.getByRole("button", { name: "Units" }).click();
+  await page.getByRole("radio", { name: "ft" }).check();
+  await expect(page.locator(".lg-ticks")).toContainText("40");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Units" })).toBeHidden();
+  await page.reload();
+  await page.waitForFunction(() => (window as any).__globe?.ready === true);
+  await expect(page.locator(".lg-unit")).toHaveText("ft");
+});
+
+test("units still switch when storage is blocked", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", { get() { throw new Error("blocked"); } });
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await open(page, "#20,0,1");
+  await expect(page.locator(".lg-unit")).toHaveText("m");
+  await page.getByRole("button", { name: "Units" }).click();
+  await page.getByRole("radio", { name: "ft" }).check();
+  await expect(page.locator(".lg-unit")).toHaveText("ft");
+  expect(errors).toEqual([]);
+});
+
+async function clickCentre(page: Page) {
+  const box = (await page.locator("#globe").boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+}
+
+test("a tap at the reference peak reads its wave height, in feet too", async ({ page }) => {
+  await open(page, "#44.28,-140.92,4");
+  await clickCentre(page);
+  const probe = page.getByRole("dialog", { name: "Conditions here" });
+  await expect(probe).toContainText(/1[34]\.\d m/);
+  await expect(probe).toContainText(/Period \d+ s/);
+  await expect(probe).toContainText(/From [NESW]{1,2} \(\d+°\)/);
+  await page.getByRole("button", { name: "Units" }).click();
+  await page.getByRole("radio", { name: "ft" }).check();
+  await expect(probe).toContainText(/4[3-6]\.\d ft/);
+  await page.keyboard.press("Escape"); // closes the units menu
+  await page.keyboard.press("Escape");
+  await expect(probe).toBeHidden();
+});
+
+test("a tap on land says there is no wave data", async ({ page }) => {
+  await open(page, "#40.4,-3.7,4");
+  await clickCentre(page);
+  await expect(page.getByRole("dialog", { name: "Conditions here" })).toContainText("Land");
+});
+
+test("drags never open the readout", async ({ page }) => {
+  await open(page, "#20,-30,1");
+  const box = (await page.locator("#globe").boundingBox())!;
+  const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 200, cy, { steps: 8 });
+  await page.mouse.up();
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 30, cy, { steps: 4 });
+  await page.mouse.move(cx, cy, { steps: 4 }); // out and back to the start point
+  await page.mouse.up();
+  await expect(page.getByRole("dialog", { name: "Conditions here" })).toBeHidden();
+});
+
+test("biggest waves flies to the reference run's peak", async ({ page }) => {
+  await open(page, "#20,0,1");
+  await page.getByRole("button", { name: "Biggest waves" }).click();
+  await page.waitForFunction(() => (window as any).__globe.view().zoom === 3.2, null, { timeout: 2500 });
+  const v = await page.evaluate(() => (window as any).__globe.view());
+  expect(Math.abs(v.lat0 - 44.28)).toBeLessThan(1);
+  expect(Math.abs(v.lon0 - -140.92)).toBeLessThan(1);
+  await expect(page.getByRole("dialog", { name: "Conditions here" })).toContainText(/1[34]\.\d m/);
 });
 
 test("no console errors on load", async ({ page }) => {
