@@ -1,4 +1,4 @@
-"""Builds one run folder: every globe sprite family plus globe.json."""
+"""Builds one run folder: every globe sprite family plus globe.json, and the 12 regional maps."""
 from __future__ import annotations
 
 import json
@@ -14,6 +14,8 @@ from .atmosphere import GUST_HOURS, cloud_from_layers, frame_a, frame_b, frame_t
 from .grid import GLOBE
 from .ocean import CURRENT_EVERY, CURRENT_FRAMES, ocean_frame, ocean_time, pack_ocean
 from .peaks import hourly, peak
+from .regions import REGIONS
+from .regional import RegionalBuilder, hours_for_frame, region_hours
 from .regrid import regrid
 from .sources.openmeteo import OpenMeteoRun, RunIncomplete, resolve_daily_run
 from .static_assets import ice_mask
@@ -64,6 +66,8 @@ def _check_complete(s: RunSources, run: datetime) -> None:
     needs = [
         ("wave", s.wave, WAVE_VARS, frame_times),
         ("gfs", s.gfs, GFS_VARS + CLOUD_VARS + ("precipitation",), frame_times),
+        ("gfs", s.gfs, ("wind_u_component_10m", "wind_v_component_10m") + CLOUD_VARS, region_hours(run)),
+        ("gfs", s.gfs, ("precipitation",), region_hours(run)[1:]),
         ("gfs025", s.g25, G25_VARS, frame_times),
         ("ifs", s.ifs, ("wind_gusts_10m", "pressure_msl"),
          [t for t in frame_times if t - run <= timedelta(hours=GUST_HOURS)]),
@@ -119,7 +123,7 @@ def _pressure(s: RunSources, t: datetime) -> np.ndarray:
 
 
 def _evict(s: RunSources, t_next: datetime | None, run: datetime) -> None:
-    """Drop downloaded inputs no frame from t_next on can read (rain reads back 1 h, IFS
+    """Drop downloaded inputs no frame from t_next on can read (regional hours back 2 h, IFS
     interpolation up to 6 h); with no next frame, everything atmospheric."""
     if t_next is None:
         for src in (s.wave, s.gfs, s.g25, s.ifs):
@@ -127,7 +131,7 @@ def _evict(s: RunSources, t_next: datetime | None, run: datetime) -> None:
         return
     s.wave.evict_before(t_next)
     s.g25.evict_before(t_next)
-    s.gfs.evict_before(t_next - timedelta(hours=1))
+    s.gfs.evict_before(t_next - timedelta(hours=2))  # regional hours in (t_next - 3 h, t_next] read from t_next - 2 h
     s.ifs.evict_before(t_next - IFS_GAP)
 
 
@@ -158,10 +162,13 @@ def build_run(run: datetime, cache_dir: Path, out_dir: Path, sources: RunSources
     try:
         peaks: dict[str, list] = {k: [] for k in ("wind", "rain", "hot", "cold", "gust", "low", "wave")}
         precip = _GfsPrecip(s.gfs)
+        regional = RegionalBuilder(s.gfs, run)
         for chunk in range(len(CHUNKS)):
             sheets: dict[str, list] = {f: [] for f in "abtsw"}
             for j in chunk_frames(chunk):
                 t = frame_time(run, j)
+                for th in hours_for_frame(run, t):
+                    regional.add_hour(th)
                 height, period, direction = (s.wave.field(v, t) for v in WAVE_VARS)
                 sheets["w"].append(wave_frame(height, period, direction, s.wave.source_grid))
                 peaks["wave"].append(wave_peak(height, s.wave.source_grid))
@@ -201,6 +208,7 @@ def build_run(run: datetime, cache_dir: Path, out_dir: Path, sources: RunSources
                 s.cur.evict_before(cut)
                 s.sst.evict_before(cut)
         save_sprite(pack_ocean(ocean), tmp / "globe-c.webp")
+        regional.write(tmp, _iso(run))
 
         manifest = {
             "run": _iso(run), **GLOBE.manifest_fields(),
@@ -233,6 +241,7 @@ def write_latest(out_dir: Path, run: datetime, built: datetime) -> None:
     path = out_dir / "latest.json"
     part = path.with_name(path.name + ".part")
     part.write_text(json.dumps({"run": _iso(run), "dir": run.strftime("%Y%m%d%H"),
+                                "regions": [r.slug for r in REGIONS],
                                 "built": built.strftime("%Y-%m-%dT%H:%M:%SZ")}, separators=(",", ":")))
     part.replace(path)
 

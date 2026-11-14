@@ -197,3 +197,34 @@ def test_manifest_fields_identical(built):
                 "pressure", "gust", "waves", "gustHours", "currents", "currentEvery", "storms", "currentFrames",
                 "sources"):
         assert mine[key] == ref[key], key
+
+
+REF_EUROPE = CAPTURE / "wx__2026111306__europe.json"
+
+
+def europe(built):
+    return json.loads((built / "europe.json").read_text(encoding="utf-8")), json.loads(REF_EUROPE.read_text(encoding="utf-8"))
+
+
+def test_europe_grid_matches_reference(built):
+    ours, ref = europe(built)
+    for k in ("region", "run", "hours", "cols", "w", "h"):
+        assert ours[k] == ref[k], k
+    for k in ("north", "south", "west", "east"):
+        assert ours[k] == pytest.approx(ref[k], abs=1e-9), k
+
+
+def test_europe_wind_peaks_identical_every_hour(built):
+    """Regional cells read the GFS 13 km node itself: all 73 hourly wind peaks match exactly."""
+    ours, ref = europe(built)
+    assert ours["peaks"]["wind"] == ref["peaks"]["wind"]
+
+
+def test_europe_rain_peaks(built):
+    """Our rain rule (2 h mean up to hour 72, node value, [1, 5, 1] / 7 smoothing) was fitted to these
+    peaks: values within 1 mm/h every hour; the place within 2 cells except where two spots nearly tie."""
+    ours, ref = europe(built)
+    pairs = list(zip(ours["peaks"]["rain"], ref["peaks"]["rain"]))
+    assert len(pairs) == 73 and max(abs(a[0] - b[0]) for a, b in pairs) <= 1.0
+    near = sum(max(abs(a[1] - b[1]) / 0.2343, abs(a[2] - b[2]) / 0.234375) <= 2 for a, b in pairs)
+    assert near >= 64, near

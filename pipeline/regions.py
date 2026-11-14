@@ -155,26 +155,19 @@ class RegionGrid:
                 "west": self.west, "east": self.east}
 
 
-def sample(field: np.ndarray, sg: SourceGrid, rg: RegionGrid, rule: str = "point") -> np.ndarray:
-    """The source field at the regional nodes (h x w, north first). "point" reads the node;
-    "tent" weights the 3 x 3 neighbourhood [1, 2, 1] x [1, 2, 1], skipping missing values."""
-    nx = field.shape[1]
-    rows, cols = rg.rows(), rg.cols()
-    if rule == "point":
-        return field[np.ix_(rows, cols % nx)].astype(np.float32)
-    if rule != "tent":
-        raise ValueError(rule)
-    total = np.zeros((rg.h, rg.w), np.float64)
-    weight = np.zeros((rg.h, rg.w), np.float64)
-    for dy, wy in ((-1, 1), (0, 2), (1, 1)):
-        r = np.clip(rows + dy, 0, field.shape[0] - 1)
-        for dx, wx in ((-1, 1), (0, 2), (1, 1)):
-            v = field[np.ix_(r, (cols + dx) % nx)]
-            ok = np.isfinite(v)
-            total += np.where(ok, v, 0) * wy * wx
-            weight += ok * (wy * wx)
-    with np.errstate(invalid="ignore"):
-        return np.where(weight > 0, total / np.where(weight > 0, weight, 1), np.nan).astype(np.float32)
+def sample(field: np.ndarray, rg: RegionGrid) -> np.ndarray:
+    """The source field at the regional nodes (h x w, north first), x wrapped. The reference's
+    hourly wind peaks match this node reading exactly (phase 6)."""
+    return field[np.ix_(rg.rows(), rg.cols() % field.shape[1])].astype(np.float32)
+
+
+def smooth151(x: np.ndarray) -> np.ndarray:
+    """Separable [1, 5, 1] / 7 on a regional grid, edges clamped (the regional rain rule, fitted
+    to the reference's hourly rain peaks: bias +0.04 mm/h)."""
+    p = np.pad(x, 1, mode="edge")
+    x = (p[1:-1, :-2] + 5 * p[1:-1, 1:-1] + p[1:-1, 2:]) / 7
+    p = np.pad(x, 1, mode="edge")
+    return ((p[:-2, 1:-1] + 5 * p[1:-1, 1:-1] + p[2:, 1:-1]) / 7).astype(np.float32)
 
 
 def region_peak(f: np.ndarray, rg: RegionGrid) -> list[float]:

@@ -3,7 +3,7 @@ import re
 import numpy as np
 import pytest
 
-from pipeline.regions import REGIONS, RegionGrid, region_peak, sample
+from pipeline.regions import REGIONS, RegionGrid, region_peak, sample, smooth151
 from pipeline.regrid import SourceGrid
 from pipeline.sources.openmeteo import MODELS
 
@@ -62,37 +62,33 @@ def test_grid_takes_every_second_node():
     assert list(g.lons()[:3]) == [-10, -8, -6] and list(g.lats()[:2]) == [50, 48]
 
 
-@pytest.mark.parametrize("rule", ["point", "tent"])
-def test_constant_field_samples_exactly(rule):
+def test_constant_field_samples_exactly():
     field = np.full((181, 360), 7.5, np.float32)
-    out = sample(field, SG, RegionGrid.of(small(-10, 10, 40, 50), SG), rule)
+    out = sample(field, RegionGrid.of(small(-10, 10, 40, 50), SG))
     assert out.shape == (6, 11) and np.allclose(out, 7.5)
 
 
-def test_spike_lands_on_its_cell_and_tent_spreads_it():
+def test_spike_lands_on_its_cell():
     field = np.zeros((181, 360), np.float32)
     field[90 + 46, 180 - 6] = 16.0  # node lat 46, lon -6
-    g = RegionGrid.of(small(-10, 10, 40, 50), SG)
-    point = sample(field, SG, g, "point")
-    assert point[2, 2] == 16.0 and point.sum() == 16.0  # row 2 = lat 46, col 2 = lon -6
-    tent = sample(field, SG, g, "tent")
-    assert tent[2, 2] == pytest.approx(4.0)  # centre weight 2*2 / (4*4)
-
-
-def test_tent_ignores_missing_neighbours():
-    field = np.full((181, 360), 3.0, np.float32)
-    field[90 + 46, 180 - 5] = np.nan
-    out = sample(field, SG, RegionGrid.of(small(-10, 10, 40, 50), SG), "tent")
-    assert np.isfinite(out).all() and np.allclose(out, 3.0)
+    out = sample(field, RegionGrid.of(small(-10, 10, 40, 50), SG))
+    assert out[2, 2] == 16.0 and out.sum() == 16.0  # row 2 = lat 46, col 2 = lon -6
 
 
 def test_longitude_wraps_past_the_last_node():
     field = np.zeros((181, 360), np.float32)
     field[:, 0] = 5.0  # lon -180 == lon 180
     g = RegionGrid.of(small(170, 180, 40, 50), SG)
-    out = sample(field, SG, g, "point")
-    assert g.east == 180 and np.allclose(out[:, -1], 5.0)
-    assert np.allclose(sample(field, SG, g, "tent")[:, -1], 5.0 * 2 / 4)
+    assert g.east == 180 and np.allclose(sample(field, g)[:, -1], 5.0)
+
+
+def test_smooth151_keeps_constants_and_spreads_a_spike():
+    assert np.allclose(smooth151(np.full((5, 6), 3.0)), 3.0)
+    x = np.zeros((5, 5))
+    x[2, 2] = 49.0
+    y = smooth151(x)
+    assert y[2, 2] == pytest.approx(25.0) and y[2, 3] == pytest.approx(5.0) and y[1, 1] == pytest.approx(1.0)
+    assert y.sum() == pytest.approx(49.0)
 
 
 def test_region_peak_reports_value_and_position():
