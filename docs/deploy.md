@@ -53,7 +53,7 @@ Repository → **Settings** → **Secrets and variables** → **Actions** →
 ## 4. First runs
 
 1. **Actions** → **Static assets** → **Run workflow**. This uploads the land
-   mask, the coastline and the tide atlas (`tide.png`, `tide.json`) to
+   mask, the coastline and the tide atlas (`tide.json` and the `tide-<hash>.png` it names) to
    `assets/globe/`. The first run downloads EOT20 (2.3 GB, cached afterwards)
    and takes about 15 minutes.
 2. **Actions** → **Forecast run** → **Run workflow** (leave the run empty).

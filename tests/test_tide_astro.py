@@ -47,3 +47,16 @@ def test_month_starts():
     m = month_starts(datetime(2026, 1, 1, tzinfo=timezone.utc), 14)
     assert len(m) == 14 and m[0] == datetime(2026, 1, 1, tzinfo=timezone.utc)
     assert m[12] == datetime(2027, 1, 1, tzinfo=timezone.utc) and m[13] == datetime(2027, 2, 1, tzinfo=timezone.utc)
+
+
+def test_real_month_table_is_continuous():
+    """Review: each month's V+u must equal the previous month's advanced by its speed, within 1 deg,
+    over the whole 2026-2035 table the atlas ships (the JS test's table is continuous by construction)."""
+    starts = month_starts(datetime(2026, 1, 1, tzinfo=timezone.utc), 121)
+    for a, b in zip(starts, starts[1:]):
+        na, nb = nodal(a), nodal(b)
+        hours = (b - a).total_seconds() / 3600
+        for k, name in enumerate(CONSTITUENTS):
+            jump = nb[name][1] - (na[name][1] + SPEEDS_RAD_PER_HOUR[k] * hours)
+            jump = math.degrees((jump + math.pi) % (2 * math.pi) - math.pi)
+            assert abs(jump) < 1.0, (name, a, jump)

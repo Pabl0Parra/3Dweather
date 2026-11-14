@@ -28,7 +28,7 @@ function atlas(G: number, opts: { landAt?: [number, number] } = {}): TideAtlas {
   const m1 = m0.slice();
   m1[1] = ((SPEED_M2 * hoursJan + Math.PI) % (2 * Math.PI)) - Math.PI;
   return {
-    source: "test", cons: ["m2", "s2", "n2", "k2", "k1", "o1", "p1", "q1"], w, h, tiles,
+    source: "test", png: "tide-test.png", cons: ["m2", "s2", "n2", "k2", "k1", "o1", "p1", "q1"], w, h, tiles,
     west: -157.5, north: 67.5, dlon: 45, dlat: 45, amax, start: "2026-01-01T00:00:00Z",
     speed: [SPEED_M2, 0, 0, 0, 0, 0, 0, 0], months: [m0, m1], pixels: px,
   };

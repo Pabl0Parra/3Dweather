@@ -4,6 +4,8 @@
 
 export type TideAtlas = {
   source: string;
+  /** File name of the atlas image, named after its content. */
+  png: string;
   cons: string[];
   w: number;
   h: number;
@@ -113,12 +115,11 @@ export function highestTide(a: TideAtlas, t: Date): { lat: number; lon: number; 
   return { lat: a.north - y * a.dlat, lon: a.west + x * a.dlon, heightM: best };
 }
 
-/** Browser: load tide.json and decode tide.png without colour conversion. */
+/** Browser: load tide.json, then the image it names (tide-<hash>.png), decoded without colour conversion. */
 export async function loadTideAtlas(base: string): Promise<TideAtlas> {
-  const [meta, img] = await Promise.all([
-    fetch(`${base}/tide.json`).then((r) => { if (!r.ok) throw new Error(`tide.json: HTTP ${r.status}`); return r.json(); }),
-    fetch(`${base}/tide.png`).then((r) => { if (!r.ok) throw new Error(`tide.png: HTTP ${r.status}`); return r.blob(); }),
-  ]);
+  const meta = await fetch(`${base}/tide.json`).then((r) => { if (!r.ok) throw new Error(`tide.json: HTTP ${r.status}`); return r.json(); });
+  const png: string = meta.png;
+  const img = await fetch(`${base}/${png}`).then((r) => { if (!r.ok) throw new Error(`${png}: HTTP ${r.status}`); return r.blob(); });
   const bitmap = await createImageBitmap(img, { colorSpaceConversion: "none", premultiplyAlpha: "none" });
   const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;

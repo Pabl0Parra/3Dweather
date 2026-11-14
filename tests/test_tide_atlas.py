@@ -121,8 +121,13 @@ def test_build_writes_png_and_json(tmp_path):
     assert meta["start"] == "2026-01-01T00:00:00Z" and len(meta["months"]) == 120 and len(meta["months"][0]) == 16
     assert meta["amax"]["m2"] == pytest.approx(0.1, abs=1e-4) and meta["amax"]["q1"] == pytest.approx(0.8, abs=1e-4)
     assert "EOT20" in meta["source"] and "CC BY 4.0" in meta["source"]
-    img = Image.open(tmp_path / "out" / "tide.png")
-    assert img.size == (720, 2160) and img.mode == "RGB"
+    # The image is named after its content, so a cached tide.json never pairs with another build's image.
+    assert meta["png"].startswith("tide-") and meta["png"].endswith(".png") and len(meta["png"]) == len("tide-0123456789ab.png")
+    with Image.open(tmp_path / "out" / meta["png"]) as img:
+        assert img.size == (720, 2160) and img.mode == "RGB"
+    assert not (tmp_path / "out" / "tide.png").exists()
+    build_tide_atlas(tmp_path / "eot", tmp_path / "out")  # same input, same name
+    assert json.loads((tmp_path / "out" / "tide.json").read_text())["png"] == meta["png"]
 
 
 ROOT = Path(__file__).resolve().parent.parent

@@ -3,10 +3,11 @@
 8 constituents averaged to a 0.5° grid and packed into one RGB PNG of 6 tiles
 (720 x 2160). Channel 2k holds X = A cos G and 2k+1 holds Y = A sin G (metres,
 byte = round(v / amax * 127) + 128); channel 16 is the sea mask; 17 is spare.
-tide.json carries the grid, amax, speeds and the monthly nodal table.
+tide.json carries the image name (tide-<hash>.png), grid, amax, speeds and the monthly nodal table.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import math
@@ -136,10 +137,16 @@ def build_tide_atlas(source: Path, out_dir: Path) -> None:
         lat, lon, amp, phase = read_constituent(source, name)
         fields[name] = to_atlas_grid(lat, lon, drop_artifacts(amp), phase)
     img, amax = encode_atlas(fields)
-    png = out_dir / "tide.png"
-    Image.fromarray(img, "RGB").save(png.with_name("tide.png.part"), format="PNG", optimize=True)
-    png.with_name("tide.png.part").replace(png)
-    meta = {"source": SOURCE, "cons": CONSTITUENTS, "w": ATLAS_W, "h": ATLAS_H, "tiles": TILES,
+    # Named after its content: tide.json and the image are cached separately (a week), so a
+    # browser holding one build's json must never be served another build's image.
+    buf = io.BytesIO()
+    Image.fromarray(img, "RGB").save(buf, format="PNG", optimize=True)
+    data = buf.getvalue()
+    name = f"tide-{hashlib.sha256(data).hexdigest()[:12]}.png"
+    png = out_dir / name
+    png.with_name(name + ".part").write_bytes(data)
+    png.with_name(name + ".part").replace(png)
+    meta = {"source": SOURCE, "png": name, "cons": CONSTITUENTS, "w": ATLAS_W, "h": ATLAS_H, "tiles": TILES,
             "west": WEST, "north": NORTH, "dlon": CELL, "dlat": CELL, "amax": amax,
             "start": START.strftime("%Y-%m-%dT%H:%M:%SZ"), "speed": [round(s, 10) for s in SPEEDS_RAD_PER_HOUR],
             "months": monthly_table()}
