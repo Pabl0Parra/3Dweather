@@ -1,7 +1,7 @@
 """Compares our wave output with the reference site's captured run 2026111306.
 
 Needs local material that is not in the repository (see .gitignore):
-  reference/openmeteo-inputs/2026111306/   Open-Meteo inputs, saved by tools/save_reference_inputs.py
+  reference/openmeteo-inputs/2026111306/   Open-Meteo inputs (a cache folder keyed by run), saved by tools/save_reference_inputs.py
   reference/thetidechart-capture/site/     the captured reference sprite and manifest
 Only day-chunk 0 of the reference sprites was captured, so frames 0-7 are compared.
 """
@@ -20,7 +20,7 @@ from pipeline.sources.openmeteo import OpenMeteoRun
 from pipeline.sprites import unpack_frame
 
 ROOT = Path(__file__).resolve().parent.parent
-INPUTS = ROOT / "reference" / "openmeteo-inputs" / "2026111306"
+INPUTS = ROOT / "reference" / "openmeteo-inputs"  # cache root: <run>/<model>/...
 CAPTURE = ROOT / "reference" / "thetidechart-capture" / "site"
 REF_SPRITE = CAPTURE / "wx__2026111306__globe-w0.webp"
 REF_MANIFEST = CAPTURE / "wx__2026111306__globe.json"
@@ -28,7 +28,7 @@ RUN = datetime(2026, 11, 13, 6, tzinfo=timezone.utc)
 
 pytestmark = [
     pytest.mark.reference,
-    pytest.mark.skipif(not (INPUTS / "ncep_gfswave025").is_dir() or not REF_SPRITE.exists(),
+    pytest.mark.skipif(not (INPUTS / "2026111306" / "ncep_gfswave025").is_dir() or not REF_SPRITE.exists(),
                        reason="local reference/ material not present"),
 ]
 

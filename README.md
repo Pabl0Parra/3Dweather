@@ -31,5 +31,8 @@ Build the wave sprites for one model run:
 python -m pipeline build --run 2026111306 --cache <cache dir> --out <output dir>
 ```
 
+Inputs are downloaded into `<cache dir>/<run>/`, so one cache folder can serve
+many runs. Exit code 2 means the run is not fully published yet; try again later.
+
 Tests marked `reference` compare the output with locally kept reference
 material in `reference/` (not in the repository) and are skipped without it.

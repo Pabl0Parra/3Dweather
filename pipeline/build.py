@@ -63,6 +63,23 @@ def build_waves(run: datetime, cache_dir: Path, out_dir: Path, source=None) -> P
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
-    shutil.rmtree(final, ignore_errors=True)
-    tmp.rename(final)
+    _swap_in(tmp, final)
     return final
+
+
+def _swap_in(tmp: Path, final: Path) -> None:
+    """Replace `final` with `tmp`. The old run is moved aside, not deleted, until
+    the new one is in place; if the move fails the old run is put back."""
+    old = final.with_name(final.name + ".old")
+    shutil.rmtree(old, ignore_errors=True)
+    had_old = final.exists()
+    if had_old:
+        final.rename(old)
+    try:
+        tmp.rename(final)
+    except BaseException:
+        if had_old:
+            old.rename(final)
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    shutil.rmtree(old, ignore_errors=True)

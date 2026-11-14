@@ -196,6 +196,8 @@ def test_missing_cells_are_ignored_not_spread():
   - `http_fetch(url: str, dest: Path) -> None` (writes `dest.part`, then renames)
   - URL: `https://openmeteo.s3.amazonaws.com/data_spatial/{model}/{run:%Y/%m/%d/%H%M}Z/{name}`; file names `%Y-%m-%dT%H%M.om`
 
+*Corrected after the final review: the cache is keyed by run, `<cache_dir>/<YYYYMMDDHH>/<model>/...`, not `<cache_dir>/<model>/...` as written below. Two runs share valid times, so a per-model folder served one run's files to another. `meta.json` is checked against the run (`reference_time`), kept on disk only when `completed` is true, and re-fetched if unreadable; a 403/404 on it is `RunIncomplete`; downloads are checked against `Content-Length`.*
+
 `field` looks in this order, matching the layout `tools/save_reference_inputs.py` already writes:
 1. `<cache_dir>/<model>/<variable>/<stamp>.npz` — keys `data`, `scale`, `nan`, `kind`; if `kind == "int16"`, value = `data / scale` with `data == nan` → `NaN`; else `data` as is.
 2. `<cache_dir>/<model>/<stamp>.om` — `omfiles.OmFileReader(path).get_child_by_name(variable)[:]`.

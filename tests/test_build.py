@@ -71,3 +71,35 @@ def test_cli_exit_codes(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr("pipeline.__main__.build_waves", boom)
     code = main(["build", "--run", "2026111306", "--cache", str(tmp_path), "--out", str(tmp_path)])
     assert code == 2 and "still being published" in capsys.readouterr().err
+
+
+class FailingSource(FakeSource):
+    def field(self, variable, valid_time):
+        if self.times.index(valid_time) == 10:
+            raise OSError("disk full")
+        return super().field(variable, valid_time)
+
+
+def test_failure_midway_leaves_no_output(tmp_path):
+    with pytest.raises(OSError):
+        build_waves(RUN, tmp_path / "cache", tmp_path / "out", source=FailingSource())
+    assert list((tmp_path / "out").iterdir()) == []
+
+
+def test_swap_failure_restores_the_existing_run(tmp_path, monkeypatch):
+    """If the new folder cannot be moved into place, the old run must come back intact."""
+    out = build_waves(RUN, tmp_path / "cache", tmp_path / "out", source=FakeSource())
+    (out / "marker").write_text("old")
+    import pipeline.build as b
+    real = b.Path.rename
+
+    def flaky(self, target):
+        if self.name.endswith(".tmp"):
+            raise PermissionError("locked")
+        return real(self, target)
+
+    monkeypatch.setattr(b.Path, "rename", flaky)
+    with pytest.raises(PermissionError):
+        build_waves(RUN, tmp_path / "cache", tmp_path / "out", source=FakeSource())
+    assert (out / "marker").read_text() == "old" and (out / "globe-w0.webp").exists()
+    assert [p.name for p in (tmp_path / "out").iterdir()] == ["2026111306"]
