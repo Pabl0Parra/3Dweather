@@ -1,0 +1,101 @@
+---
+// One globe page; each page file only names its layer.
+import "../styles/globe.css";
+import "../styles/splash.css";
+import { LAYER_IDS, LAYERS, type LayerId } from "../globe/layers";
+
+interface Props { layer: LayerId }
+const { layer } = Astro.props;
+const l = LAYERS[layer];
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{l.title}</title>
+    <meta name="description" content={l.description} />
+    <script is:inline>
+      // Hide the page chrome before first paint when the opening splash will play.
+      try {
+        if (!/[?&]nosplash/.test(location.search) && sessionStorage.getItem("3dw.splash") !== "1")
+          document.documentElement.classList.add("splash-pending");
+      } catch (e) {
+        document.documentElement.classList.add("splash-pending");
+      }
+    </script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/wave-map">3Dweather</a>
+      <nav class="layer-tabs" aria-label="Map layers">
+        {LAYER_IDS.map((id) => (
+          <a href={LAYERS[id].path} data-layer={id} aria-current={id === layer ? "page" : undefined}>{LAYERS[id].heading}</a>
+        ))}
+      </nav>
+      <div class="header-tools">
+        <button type="button" class="units-button" id="units-button">Units</button>
+      </div>
+    </header>
+    <main class="wave-page" data-layer={layer}>
+      <section class="globe" id="globe" aria-label={`Interactive globe showing forecast ${l.legend.title.toLowerCase()}`}></section>
+      <div class="controls">
+        <div id="timeline"></div>
+        <button type="button" class="biggest-button" id="biggest-button">{l.biggestLabel}</button>
+        <div id="legend"></div>
+      </div>
+      <noscript><p class="credits">This map needs JavaScript and WebGL.</p></noscript>
+      <p class="credits" id="credits" set:html={l.credits}></p>
+    </main>
+    <script>
+      import { initGlobe } from "../globe/globe";
+      import { LAYERS, type LayerId } from "../globe/layers";
+      import { markPlayed, shouldPlay } from "../splash/intro";
+      import { playSplash } from "../splash/splash";
+
+      const main = document.querySelector<HTMLElement>("main[data-layer]")!;
+      const section = document.getElementById("globe")!;
+      const biggest = document.getElementById("biggest-button") as HTMLButtonElement;
+      const credits = document.getElementById("credits")!;
+      const nav = document.querySelector<HTMLElement>('nav[aria-label="Map layers"]')!;
+      const session = (() => { try { return window.sessionStorage; } catch { return null; } })();
+      const play = shouldPlay(location.search, session);
+
+      initGlobe(section, {
+        layer: main.dataset.layer as LayerId,
+        timeline: document.getElementById("timeline")!,
+        legend: document.getElementById("legend")!,
+        unitsButton: document.getElementById("units-button") as HTMLButtonElement,
+        biggestButton: biggest,
+      }).then((globe) => {
+        if (globe) {
+          // In-place switch: same place (hash) and hour; plain links without JavaScript or WebGL.
+          nav.addEventListener("click", (e) => {
+            const a = (e.target as Element).closest<HTMLAnchorElement>("a[data-layer]");
+            if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            const id = a.dataset.layer as LayerId, l = LAYERS[id];
+            if (id === globe.layer()) return;
+            history.replaceState(null, "", l.path + location.search + location.hash);
+            document.title = l.title;
+            document.querySelector('meta[name="description"]')?.setAttribute("content", l.description);
+            nav.querySelectorAll("a").forEach((x) => x.toggleAttribute("aria-current", false));
+            a.setAttribute("aria-current", "page");
+            main.dataset.layer = id;
+            section.setAttribute("aria-label", `Interactive globe showing forecast ${l.legend.title.toLowerCase()}`);
+            biggest.textContent = l.biggestLabel;
+            credits.innerHTML = l.credits;
+            void globe.setLayer(id);
+          });
+        }
+        if (!globe || !play) {
+          document.documentElement.classList.remove("splash-pending");
+          return;
+        }
+        markPlayed(session);
+        const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        void playSplash(globe, { reduced, dataReady: globe.loaded });
+      });
+    </script>
+  </body>
+</html>

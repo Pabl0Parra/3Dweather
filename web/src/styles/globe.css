@@ -37,7 +37,26 @@ html, body {
   text-transform: uppercase;
   font-size: 13px;
 }
-.header-tools { position: relative; }
+.header-tools { position: relative; flex: none; }
+.layer-tabs {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  margin: 0 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.layer-tabs a {
+  flex: none;
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: var(--dim);
+  text-decoration: none;
+  font-size: 13px;
+}
+.layer-tabs a:hover { color: var(--ink); }
+.layer-tabs a[aria-current="page"] { color: var(--ink); background: #0b1628; box-shadow: inset 0 0 0 1px var(--line); }
+.layer-tabs a:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
 .units-button {
   border: 1px solid var(--line);
   background: #0b1628;
