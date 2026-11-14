@@ -209,6 +209,16 @@ test("drags never open the readout", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: "Conditions here" })).toBeHidden();
 });
 
+test("biggest waves flies to the reference run's peak", async ({ page }) => {
+  await open(page, "#20,0,1");
+  await page.getByRole("button", { name: "Biggest waves" }).click();
+  await page.waitForFunction(() => (window as any).__globe.view().zoom === 3.2, null, { timeout: 2500 });
+  const v = await page.evaluate(() => (window as any).__globe.view());
+  expect(Math.abs(v.lat0 - 44.28)).toBeLessThan(1);
+  expect(Math.abs(v.lon0 - -140.92)).toBeLessThan(1);
+  await expect(page.getByRole("dialog", { name: "Conditions here" })).toContainText(/1[34]\.\d m/);
+});
+
 test("no console errors on load", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });

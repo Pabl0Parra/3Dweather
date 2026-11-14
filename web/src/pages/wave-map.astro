@@ -20,6 +20,7 @@ import "../styles/globe.css";
       <section class="globe" id="globe" aria-label="Interactive globe showing forecast wave height"></section>
       <div class="controls">
         <div id="timeline"></div>
+        <button type="button" class="biggest-button" id="biggest-button">Biggest waves</button>
         <div id="legend"></div>
       </div>
       <noscript><p class="credits">The wave map needs JavaScript and WebGL.</p></noscript>
@@ -33,6 +34,7 @@ import "../styles/globe.css";
         timeline: document.getElementById("timeline")!,
         legend: document.getElementById("legend")!,
         unitsButton: document.getElementById("units-button") as HTMLButtonElement,
+        biggestButton: document.getElementById("biggest-button") as HTMLButtonElement,
       });
     </script>
   </body>

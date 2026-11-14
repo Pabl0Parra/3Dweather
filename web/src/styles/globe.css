@@ -146,6 +146,20 @@ html, body {
   font-size: 13px;
   cursor: pointer;
 }
+.biggest-button {
+  border: 1px solid var(--hot);
+  background: #2a0f1f;
+  color: var(--ink);
+  border-radius: 999px;
+  height: 32px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.biggest-button:hover { background: #3d1430; }
+.biggest-button:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
 .tl-play { grid-area: play; }
 .tl-speed { grid-area: speed; font-variant-numeric: tabular-nums; }
 .tl-play:hover, .tl-speed:hover { border-color: var(--cyan); }

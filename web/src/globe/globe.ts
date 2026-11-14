@@ -6,6 +6,7 @@ import { attachGestures } from "./gestures";
 import { formatHash, parseHash } from "./hash";
 import { drawOverlay } from "./overlay";
 import { initialHour, mountTimeline, type TimelineHandle } from "./timeline";
+import { biggestWave, FLY_MS, FLY_ZOOM, flyView } from "./fly";
 import { formatCoord, Probe, readoutLines } from "./probe";
 import { mountLegend } from "./ui";
 import { loadUnits, mountUnitsMenu, type Units } from "./units";
@@ -51,7 +52,7 @@ async function withRetry<T>(load: () => Promise<T>, notice: (m: string | null) =
 
 export async function initGlobe(
   root: HTMLElement,
-  opts: { timeline?: HTMLElement; legend?: HTMLElement; unitsButton?: HTMLButtonElement } = {},
+  opts: { timeline?: HTMLElement; legend?: HTMLElement; unitsButton?: HTMLButtonElement; biggestButton?: HTMLButtonElement } = {},
 ): Promise<GlobeHandle | null> {
   const canvas = document.createElement("canvas");
   canvas.className = "globe-gl";
@@ -162,6 +163,26 @@ export async function initGlobe(
     flowStale = true;
   }
   unitListeners.push(() => refreshProbe());
+
+  // Camera flights (Biggest waves). Any press on the globe cancels one.
+  let flight = 0;
+  function flyTo(to: View, done?: () => void): void {
+    cancelAnimationFrame(flight);
+    const from = view, t0 = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - t0) / FLY_MS);
+      setView(flyView(from, to, t));
+      if (t < 1) flight = requestAnimationFrame(tick);
+      else { flight = 0; done?.(); }
+    };
+    flight = requestAnimationFrame(tick);
+  }
+  root.addEventListener("pointerdown", () => { cancelAnimationFrame(flight); flight = 0; });
+  opts.biggestButton?.addEventListener("click", () => {
+    if (!pair || !manifest || !land) return;
+    const peak = biggestWave(pair.a, manifest, land);
+    flyTo({ lat0: peak.lat, lon0: peak.lon, zoom: FLY_ZOOM }, () => probeAt(peak.lat, peak.lon));
+  });
 
   attachGestures(
     root,
