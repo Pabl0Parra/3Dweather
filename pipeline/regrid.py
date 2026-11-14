@@ -17,6 +17,7 @@ class SourceGrid:
     dlat: float
     dlon: float
     wrap: bool = True
+    area_mean: bool = False  # globe cells are whole blocks of source cells: average them
 
 
 @dataclass(frozen=True)
@@ -81,7 +82,30 @@ def regrid_bilinear(src: np.ndarray, sg: SourceGrid, grid: GlobeGrid) -> np.ndar
 def regrid(src: np.ndarray, sg: "SourceGrid | ReducedGaussian", grid: GlobeGrid) -> np.ndarray:
     if isinstance(sg, ReducedGaussian):
         return regrid_reduced_gaussian(src, sg, grid)
+    if sg.area_mean:
+        return regrid_block_mean(src, sg, grid)
     return regrid_bilinear(src, sg, grid)
+
+
+def regrid_block_mean(src: np.ndarray, sg: SourceGrid, grid: GlobeGrid) -> np.ndarray:
+    """Mean of the k x k source cells that make up each globe cell (NaN skipped).
+    Only for grids whose cells nest exactly; anything else raises ValueError."""
+    k = round(grid.dlon / sg.dlon)
+    ky = round(grid.dlat / sg.dlat)
+    if k < 1 or k != ky or abs(grid.dlon / sg.dlon - k) > 1e-3 or abs(grid.dlat / sg.dlat - k) > 1e-3:
+        raise ValueError(f"source cells do not nest in globe cells ({grid.dlon / sg.dlon:.4f})")
+    fx = (grid.west - sg.lon0) / sg.dlon - (k - 1) / 2
+    fy = (grid.north - sg.lat0) / sg.dlat + (k - 1) / 2  # northernmost source row of block 0
+    x0, y0 = round(fx), round(fy)
+    if abs(fx - x0) > 0.01 or abs(fy - y0) > 0.01:
+        raise ValueError("source and globe cell edges do not line up")
+    rows = y0 - np.arange(grid.h * k)  # north to south
+    if rows.min() < 0 or rows.max() >= src.shape[0]:
+        raise ValueError("globe grid reaches past the source rows")
+    cols = (x0 + np.arange(grid.w * k)) % src.shape[1]
+    block = np.asarray(src, dtype=np.float64)[np.ix_(rows, cols)].reshape(grid.h, k, grid.w, k)
+    with np.errstate(invalid="ignore"):
+        return np.nanmean(block, axis=(1, 3)).astype(np.float32) if np.isnan(block).any()             else block.mean(axis=(1, 3)).astype(np.float32)
 
 
 def regrid_reduced_gaussian(src: np.ndarray, rg: ReducedGaussian, grid: GlobeGrid) -> np.ndarray:

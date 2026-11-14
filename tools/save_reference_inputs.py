@@ -23,7 +23,6 @@ from pathlib import Path
 
 import numpy as np
 import omfiles
-import s3fs
 
 BUCKET = "openmeteo"
 HTTP = "https://openmeteo.s3.amazonaws.com"
@@ -41,6 +40,9 @@ SUBSET = {
         "wind_u_component_10m": FRAME_TIMES,
         "wind_v_component_10m": FRAME_TIMES,
         "cloud_cover": FRAME_TIMES,
+        "cloud_cover_low": FRAME_TIMES,  # the cloud layer is built from low, mid and high (phase 3a)
+        "cloud_cover_mid": FRAME_TIMES,
+        "cloud_cover_high": FRAME_TIMES,
         "temperature_2m": FRAME_TIMES,
         "precipitation": HOURLY_TIMES,
         "showers": HOURLY_TIMES,
@@ -150,7 +152,7 @@ def save_whole(model: str, run_dir: str, name: str, out: Path) -> str:
 def main() -> int:
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else (
         Path(__file__).resolve().parent.parent / "reference" / "openmeteo-inputs" / "2026111306")
-    fs = s3fs.S3FileSystem(anon=True)
+    fs = None  # downloads go over plain HTTPS
     jobs = []
     missing: list[str] = []
     with ThreadPoolExecutor(max_workers=6) as pool:

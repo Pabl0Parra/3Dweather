@@ -24,7 +24,7 @@ _MERCATOR = SourceGrid(lat0=-79.958336, lon0=-179.95833, dlat=1 / 12, dlon=1 / 1
 
 MODELS: dict[str, SourceGrid | ReducedGaussian] = {
     "ncep_gfswave025": SourceGrid(lat0=-90.0, lon0=-180.0, dlat=0.25, dlon=0.25),
-    "ncep_gfs013": SourceGrid(lat0=-89.912125, lon0=-180.0, dlat=179.82425 / 1535, dlon=360 / 3072),
+    "ncep_gfs013": SourceGrid(lat0=-89.912125, lon0=-180.0, dlat=179.82425 / 1535, dlon=360 / 3072, area_mean=True),
     "ncep_gfs025": SourceGrid(lat0=-90.0, lon0=-180.0, dlat=0.25, dlon=0.25),
     "ecmwf_ifs": ReducedGaussian(1280),
     "meteofrance_currents": _MERCATOR,

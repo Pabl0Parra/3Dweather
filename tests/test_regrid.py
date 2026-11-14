@@ -87,3 +87,24 @@ def test_missing_cells_are_skipped(smooth):
     src[0, start:start + O1280.counts()[1000]] = np.nan
     out = regrid(src, O1280, GLOBE)
     assert np.isfinite(out).all() and np.max(np.abs(out - want)) < 0.01
+
+
+# --- block (area) mean: the globe grid is exactly 4x4 GFS 13 km cells ---
+from pipeline.regrid import regrid_block_mean
+from pipeline.sources.openmeteo import MODELS
+
+GFS13 = MODELS["ncep_gfs013"]
+
+
+def test_block_mean_averages_four_by_four():
+    src = np.zeros((1536, 3072), np.float32)
+    src[1532:1536, 0:4] = 1.0  # the top-left globe cell's block (rows run northward)
+    src[1532:1536, 4] = 8.0  # one column of the next block
+    out = regrid(src, GFS13, GLOBE)
+    assert out.shape == (384, 768)
+    assert out[0, 0] == 1.0 and out[0, 1] == 2.0 and out[1, 0] == 0.0
+
+
+def test_block_mean_rejects_misaligned_grids():
+    with pytest.raises(ValueError):
+        regrid_block_mean(np.zeros((721, 1440)), SG, GLOBE)
