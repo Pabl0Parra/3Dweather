@@ -1,5 +1,7 @@
 import warnings
 
+import pytest
+
 import numpy as np
 
 from pipeline.grid import GLOBE
@@ -31,3 +33,57 @@ def test_missing_cells_are_ignored_not_spread():
     y, x = GLOBE.cell_of(-90 + 0.25 * 320, -180 + 0.25 * 530)
     assert np.isnan(out[y, x])  # all four neighbours missing
     assert np.allclose(out[np.isfinite(out)], 1.0, atol=1e-6)  # partial neighbours use valid ones only
+
+
+# --- reduced Gaussian (IFS O1280) ---
+from pipeline.grid import GLOBE
+from pipeline.regrid import ReducedGaussian, regrid
+
+O1280 = ReducedGaussian(1280)
+
+
+def _points(rg):
+    lats = np.repeat(rg.lats(), rg.counts())
+    lons = np.concatenate([np.arange(c) * 360.0 / c for c in rg.counts()])
+    return np.radians(lats), np.radians(lons)
+
+
+def _f(lat, lon):
+    return np.sin(lat) + np.cos(lat) * np.cos(lon - np.radians(30))
+
+
+@pytest.fixture(scope="module")
+def smooth():
+    lat, lon = _points(O1280)
+    src = _f(lat, lon)[None, :].astype(np.float32)
+    want = _f(np.radians(GLOBE.lats())[:, None], np.radians(GLOBE.lons())[None, :])
+    return src, want
+
+
+def test_o1280_has_6599680_points():
+    assert int(np.sum(O1280.counts())) == 6599680
+    assert len(O1280.lats()) == 2560 and O1280.lats()[0] > 89 and O1280.lats()[-1] < -89
+
+
+def test_smooth_field_is_reproduced(smooth):
+    src, want = smooth
+    assert np.nanmax(np.abs(regrid(src, O1280, GLOBE) - want)) < 1e-3
+
+
+def test_no_seam_at_antimeridian(smooth):
+    out = regrid(smooth[0], O1280, GLOBE)
+    assert np.max(np.abs(out[:, 0] - out[:, -1])) < 0.02
+
+
+def test_poles_are_finite(smooth):
+    out = regrid(smooth[0], O1280, GLOBE)
+    assert np.isfinite(out[0]).all() and np.isfinite(out[-1]).all()
+
+
+def test_missing_cells_are_skipped(smooth):
+    src, want = smooth
+    src = src.copy()
+    start = int(np.sum(O1280.counts()[:1000]))
+    src[0, start:start + O1280.counts()[1000]] = np.nan
+    out = regrid(src, O1280, GLOBE)
+    assert np.isfinite(out).all() and np.max(np.abs(out - want)) < 0.01
