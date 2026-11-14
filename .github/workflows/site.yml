@@ -1,0 +1,63 @@
+# Builds the web site (globe, regional maps, one page per station) and publishes it to
+# the root of the R2 bucket, uploading only files that changed (spec §7). Station pages
+# come from catalogue/stations.json in the bucket (built by the Static assets workflow).
+# Without the R2 secrets (forks, or before setup) it builds and skips the upload.
+name: Site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: site
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -e ".[publish]"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - name: Station catalogue
+        run: |
+          if [ -z "$R2_BUCKET" ]; then
+            echo "::notice::R2 secrets are not set: building without station pages (see docs/deploy.md)"
+          elif ! python -m pipeline get --key catalogue/stations.json --out "$RUNNER_TEMP/stations.json" --store r2; then
+            echo "::notice::catalogue/stations.json is not in the bucket yet: run Static assets first"
+          fi
+      - name: Build
+        working-directory: web
+        env:
+          CATALOGUE_FILE: ${{ runner.temp }}/stations.json
+          PUBLIC_WX_BASE: /wx
+          PUBLIC_ASSET_BASE: /assets/globe
+          PUBLIC_CATALOGUE_BASE: /catalogue
+        run: npm run build
+      - name: Publish
+        run: |
+          if [ -z "$R2_BUCKET" ]; then
+            echo "::notice::R2 secrets are not set: nothing published"
+            exit 0
+          fi
+          python -m pipeline publish-site --dist web/dist --store r2

@@ -34,14 +34,20 @@ class Store(Protocol):
 
 
 class DirStore:
-    """A local folder standing in for a bucket (tests, dry runs). Headers go to a sidecar."""
+    """A local folder standing in for a bucket (tests, dry runs). Headers go to a sidecar.
+
+    Bucket keys are flat, so ``a`` and ``a/b`` can both exist; each object is stored as
+    ``<key>.obj`` so a key never collides with the folder of the keys below it.
+    """
+
+    SUFFIX = ".obj"
 
     def __init__(self, root: Path):
         self.root = Path(root)
         self.order: list[str] = []  # keys in the order they were written
 
     def _path(self, key: str) -> Path:
-        return self.root / key
+        return self.root / (key + self.SUFFIX)
 
     def _meta(self, key: str) -> Path:
         return self.root / ".meta" / (key + ".json")
@@ -76,8 +82,9 @@ class DirStore:
     def list_keys(self, prefix):
         if not self.root.exists():
             return []
-        keys = (p.relative_to(self.root).as_posix() for p in self.root.rglob("*") if p.is_file())
-        return sorted(k for k in keys if not k.startswith(".meta/") and k.startswith(prefix))
+        keys = (p.relative_to(self.root).as_posix() for p in self.root.rglob("*" + self.SUFFIX) if p.is_file())
+        keys = (k[: -len(self.SUFFIX)] for k in keys if not k.startswith(".meta/"))
+        return sorted(k for k in keys if k.startswith(prefix))
 
     def delete_keys(self, keys):
         for k in keys:

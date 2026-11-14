@@ -56,3 +56,22 @@ def test_static_builds_and_uploads_the_tide_atlas():
     assert "actions/cache@v4" in t
     assert '.[publish,tides]' in t
     assert "python -m pipeline tide-atlas --eot20" in t and '--out "$RUNNER_TEMP/static"' in t
+
+
+def test_static_builds_and_uploads_the_catalogue():
+    t = text("static.yml")
+    assert "python -m pipeline catalogue --inputs" in t
+    assert "--prefix catalogue --max-age 86400" in t
+
+
+def test_site_builds_with_the_catalogue_and_publishes_changed_files():
+    t = text("site.yml")
+    assert "branches: [main]" in t and "workflow_dispatch:" in t
+    assert "group: site" in t
+    assert "python -m pipeline get --key catalogue/stations.json" in t
+    assert "CATALOGUE_FILE: ${{ runner.temp }}/stations.json" in t
+    assert "PUBLIC_WX_BASE: /wx" in t and "PUBLIC_ASSET_BASE: /assets/globe" in t and "PUBLIC_CATALOGUE_BASE: /catalogue" in t
+    assert "npm run build" in t and "python -m pipeline publish-site --dist web/dist --store r2" in t
+    assert 'if [ -z "$R2_BUCKET" ]; then' in t  # forks and pre-setup: build, publish nothing
+    for name in ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET"):
+        assert f"secrets.{name}" in t

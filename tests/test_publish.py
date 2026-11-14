@@ -120,3 +120,18 @@ def test_s3_store_calls(tmp_path):
     assert [c[1] for c in s3.calls if c[0] == "list"] == [None, "t"]
     deletes = [c for c in s3.calls if c[0] == "delete"]
     assert [len(d[2]) for d in deletes] == [1000, 500]  # S3 caps a delete batch at 1000 keys
+
+
+def test_dir_store_holds_a_key_and_keys_below_it(tmp_path):
+    """R2 keys are flat: the page `weather-map` and `weather-map/europe` live side by side."""
+    store = DirStore(tmp_path / "bucket")
+    store.put_bytes("weather-map", b"globe", "text/html", "x")
+    store.put_bytes("weather-map/europe", b"europe", "text/html", "x")
+    store.put_bytes("a/b/c", b"deep", "text/plain", "x")
+    store.put_bytes("a", b"top", "text/plain", "x")
+    assert store.get_bytes("weather-map") == b"globe" and store.get_bytes("weather-map/europe") == b"europe"
+    assert store.get_bytes("a") == b"top" and store.get_bytes("a/b/c") == b"deep"
+    assert store.list_keys("") == ["a", "a/b/c", "weather-map", "weather-map/europe"]
+    assert store.list_keys("weather-map/") == ["weather-map/europe"]
+    store.delete_keys(["weather-map"])
+    assert store.get_bytes("weather-map") is None and store.get_bytes("weather-map/europe") == b"europe"
