@@ -77,7 +77,7 @@ export function mountSearchBox(root: HTMLElement): void {
   input.addEventListener("focus", ensure);
   input.addEventListener("input", () => {
     window.clearTimeout(timer);
-    timer = window.setTimeout(render, DEBOUNCE_MS);
+    timer = window.setTimeout(() => { timer = 0; render(); }, DEBOUNCE_MS);
   });
   input.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -86,8 +86,9 @@ export function mountSearchBox(root: HTMLElement): void {
       const n = results.length;
       setActive(e.key === "ArrowDown" ? (active + 1) % n : (active - 1 + n) % n);
     } else if (e.key === "Enter") {
+      if (timer) render(); // typed within the debounce: the list still shows the previous query
       window.clearTimeout(timer);
-      if (cat && !results.length) render();
+      timer = 0;
       const pick = results[Math.max(active, 0)];
       if (pick) {
         e.preventDefault();

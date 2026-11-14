@@ -62,6 +62,8 @@ def main(argv: list[str] | None = None) -> int:
     site = sub.add_parser("publish-site", help="upload the built web site to the bucket root (changed files only)")
     site.add_argument("--dist", required=True, type=Path)
     site.add_argument("--store", required=True)
+    site.add_argument("--allow-mass-delete", action="store_true",
+                      help="allow deleting more than 10%% of the published site (normally a sign of a broken build)")
     get = sub.add_parser("get", help="download one key from the store (exit 3 when it does not exist)")
     get.add_argument("--key", required=True)
     get.add_argument("--out", required=True, type=Path)
@@ -70,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "publish-site":
         from .site import publish_site
-        r = publish_site(store_from_arg(args.store), args.dist)
+        r = publish_site(store_from_arg(args.store), args.dist, allow_mass_delete=args.allow_mass_delete)
         print(f"uploaded {r['uploaded']}, unchanged {r['unchanged']}, deleted {r['deleted']}")
         return 0
     if args.command == "get":

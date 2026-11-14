@@ -347,11 +347,13 @@ These cannot be matched from outside; each is our own rule, documented as such.
   - `hours` in the manifest is the frame count (73), as in the reference.
 - **Phase 7 results (2026-11-14, catalogue and hosting).**
   - Catalogue: 24,512 stations (3,502 NOAA tide-prediction stations, 21,010
-    GeoNames places) in 201 countries, against the reference's 24,631 in 190.
-    United States 5,040 against 4,111. Our rule: every NOAA station, plus
+    GeoNames places) in 202 countries, against the reference's 24,631 in 190.
+    United States 5,046 against 4,111. Our rule: every NOAA station, plus
     `cities500` places within 4.5 km of the Natural Earth 50m coastline, a place
-    within 0.5 km of a larger one dropped. 1,675 places sit within 5 km of a NOAA
-    station and name it as their tide source.
+    within 0.5 km of a larger one dropped. `pipeline/catalogue_overrides.json`
+    gives 32 remote NOAA stations their country or US state (and 4 of them a
+    corrected longitude). 1,681 places sit within 5 km of a NOAA station and
+    name it as their tide source.
   - Search file: 2.3 MB, 0.79 MB gzip compressed (target 1-2 MB).
   - Pages: 24,542 built in 52 s. Cloudflare Pages' free plan allows 20,000
     files per site (confirmed on its limits page), so pages go to R2 with the

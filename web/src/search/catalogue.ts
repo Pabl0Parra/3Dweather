@@ -13,9 +13,10 @@ export type Catalogue = { entries: Entry[] };
 
 const CATALOGUE_BASE: string = import.meta.env.PUBLIC_CATALOGUE_BASE || "/catalogue";
 
-/** Lower-case, accents removed, every run of non-alphanumerics a single space. */
+/** Lower-case, accents and apostrophes removed ("St. John's" -> "st johns"), other punctuation a single space. */
 export function fold(s: string): string {
-  return s.normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return s.normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase().replace(/['’ʼ`]/gu, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
 export function makeCatalogue(f: SearchFile): Catalogue {

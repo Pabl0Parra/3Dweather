@@ -63,7 +63,7 @@ def test_first_publish_uploads_pages_without_html_and_skips_data(tmp_path):
     assert order.index("_astro/app.abc123.js") < order.index("wave-map")
     assert order[-1] == MANIFEST
     manifest = json.loads(store.get_bytes(MANIFEST))
-    assert sorted(manifest) == sorted(k for k in keys if k != MANIFEST)
+    assert sorted(manifest["files"]) == sorted(k for k in keys if k != MANIFEST) and manifest["retired"] == {}
 
 
 def test_second_publish_uploads_nothing(tmp_path):
@@ -120,3 +120,56 @@ def test_cli_publish_site_and_get(tmp_path, capsys):
     assert out.read_bytes() == b"[]"
     assert main(["get", "--key", "catalogue/missing.json", "--out", str(tmp_path / "m.json"), "--store", f"dir:{bucket}"]) == 3
     assert not (tmp_path / "m.json").exists()
+
+
+# --- review fixes ---------------------------------------------------------------------------
+
+def _pages(n):
+    return {f"us/x/p{i}.html": f"<p>{i}</p>" for i in range(n)}
+
+
+def test_refuses_to_delete_most_of_the_site(tmp_path):
+    import pytest
+    from pipeline.site import MassDelete
+    dist = make_dist(tmp_path / "dist", {**_pages(100), "wave-map.html": "x"})
+    store = DirStore(tmp_path / "bucket")
+    publish_site(store, dist)
+    for i in range(100):
+        (dist / f"us/x/p{i}.html").unlink()
+    with pytest.raises(MassDelete):
+        publish_site(store, dist)
+    assert store.get_bytes("us/x/p0") == b"<p>0</p>"  # nothing deleted, nothing uploaded
+    assert publish_site(store, dist, allow_mass_delete=True)["deleted"] == 100
+
+
+def test_a_few_removed_pages_are_fine(tmp_path):
+    dist = make_dist(tmp_path / "dist", _pages(100))
+    store = DirStore(tmp_path / "bucket")
+    publish_site(store, dist)
+    for i in range(5):
+        (dist / f"us/x/p{i}.html").unlink()
+    assert publish_site(store, dist)["deleted"] == 5
+
+
+def test_old_scripts_outlive_cached_pages(tmp_path):
+    from datetime import datetime, timedelta, timezone
+    t0 = datetime(2026, 11, 14, tzinfo=timezone.utc)
+    dist = make_dist(tmp_path / "dist", {"wave-map.html": "v1", "_astro/app.v1.js": "1"})
+    store = DirStore(tmp_path / "bucket")
+    publish_site(store, dist, now=t0)
+    (dist / "_astro/app.v1.js").unlink()
+    make_dist(dist, {"wave-map.html": "v2", "_astro/app.v2.js": "2"})
+    r = publish_site(store, dist, now=t0 + timedelta(hours=1))
+    assert r["deleted"] == 0 and store.get_bytes("_astro/app.v1.js") == b"1"  # a cached v1 page still loads it
+    assert publish_site(store, dist, now=t0 + timedelta(hours=20))["deleted"] == 0
+    assert publish_site(store, dist, now=t0 + timedelta(days=2, hours=1))["deleted"] == 1  # 2 days after it retired
+    assert store.get_bytes("_astro/app.v1.js") is None
+    assert store.get_bytes("_astro/app.v2.js") == b"2"
+
+
+def test_reads_a_flat_manifest_from_before(tmp_path):
+    store = DirStore(tmp_path / "bucket")
+    store.put_bytes("wave-map", b"x", "text/html", "x")
+    import hashlib
+    store.put_bytes(MANIFEST, json.dumps({"wave-map": hashlib.md5(b"x").hexdigest()}).encode(), "application/json", "no-store")
+    assert publish_site(store, make_dist(tmp_path / "dist", {"wave-map.html": "x"}))["unchanged"] == 1

@@ -62,7 +62,7 @@ def write_inputs(d: Path, cities: list[str], noaa: list[dict]) -> Path:
 
 def build(tmp_path, cities, noaa=()):
     coast = write_inputs(tmp_path / "in", cities, list(noaa))
-    return build_catalogue(tmp_path / "in", coast)
+    return build_catalogue(tmp_path / "in", coast, overrides={})  # fixtures, not the packaged table
 
 
 def by_name(records, name):
@@ -151,7 +151,7 @@ def test_paths_unique_and_ascii(tmp_path):
     paths = [r["path"] for r in recs]
     assert len(set(paths)) == len(paths)
     assert {"fr/ile-de-france/twin", "fr/ile-de-france/twin-2", "fr/ile-de-france/twin-3",
-            "fr/ile-de-france/tokyo", "fr/ile-de-france/place-5"} == set(paths)
+            "fr/ile-de-france/tokyo", "fr/ile-de-france/place-5"} == set(paths)  # suffixes are GeoNames ids
     assert all(p.isascii() for p in paths)
 
 
@@ -214,3 +214,60 @@ def test_fetch_inputs_downloads_only_what_is_missing(tmp_path):
     assert "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=tidepredictions" in got
     assert not any("countryInfo" in u for u in got)
     assert fetch_inputs(tmp_path, fetch=fake) == coast and len(got) == len(INPUTS) - 1
+
+
+# --- review fixes ---------------------------------------------------------------------------
+
+def test_override_sets_country_and_fixes_position(tmp_path):
+    coast = write_inputs(tmp_path / "in", [_city(1, "Coastville", 45, 0.02)],
+                         [_noaa("TPT2893", "Neiafu", -18.65, 6.0167, corr=-11),
+                          _noaa("1619910", "Sand Island, Midway", 28.21, -177.36, corr=-11)])
+    overrides = {"TPT2893": {"cc": "TO", "lon": -173.9833}, "1619910": {"cc": "UM"}}
+    recs = build_catalogue(tmp_path / "in", coast, overrides=overrides)
+    neiafu, midway = by_name(recs, "Neiafu")[0], by_name(recs, "Sand Island, Midway")[0]
+    assert (neiafu["country_code"], neiafu["longitude"], neiafu["region_name"]) == ("TO", -173.9833, "TO")  # no countryInfo row
+    assert midway["path"].startswith("um/") and midway["timezone"] == "Etc/GMT+11"
+
+
+def test_override_can_route_a_gauge_through_its_us_state(tmp_path):
+    coast = write_inputs(tmp_path / "in", [_city(1, "Coastville", 45, 0.02)],
+                         [_noaa("TWC2307", "Kiska Harbor", 51.98, 177.55, corr=-10)])
+    recs = build_catalogue(tmp_path / "in", coast, overrides={"TWC2307": {"state": "HI"}})  # fixture has HI only
+    assert by_name(recs, "Kiska Harbor")[0]["path"] == "us/hawaii/kiska-harbor"
+
+
+def test_packaged_overrides_load():
+    from pipeline.catalogue import load_overrides
+    o = load_overrides()
+    assert o["TPT2893"]["cc"] == "TO" and o["TWC2307"]["state"] == "AK"
+
+
+def test_places_claim_slugs_before_gauges(tmp_path):
+    recs = build(tmp_path, [_city(10, "Boston", 45, 0.02, pop=600000)],
+                 [_noaa("8443970", "Boston", 45.01, 0.0, corr=1)])
+    assert by_name(recs, "Boston")[0]["type"] == "place"
+    paths = {r["type"]: r["path"] for r in recs}
+    assert paths == {"place": "fr/ile-de-france/boston", "gauge": "fr/ile-de-france/boston-8443970"}
+    place = [r for r in recs if r["type"] == "place"][0]
+    assert place["reference_station"]["path"] == "fr/ile-de-france/boston-8443970"
+
+
+def test_place_suffixes_are_stable_ids(tmp_path):
+    recs = build(tmp_path, [_city(7, "Twin", 45, 0.02, pop=900), _city(3, "Twin", 46, 0.02, pop=800)])
+    assert sorted(r["path"] for r in recs) == ["fr/ile-de-france/twin", "fr/ile-de-france/twin-3"]
+
+
+@pytest.mark.reference
+@pytest.mark.skipif(not (REAL_INPUTS / "noaa-tidepredictions.json").exists(), reason="run the catalogue command first")
+def test_every_remote_blank_state_gauge_has_an_override():
+    """A NOAA station far from every GeoNames place cannot borrow a country: it needs an entry in catalogue_overrides.json."""
+    import numpy as np
+    from pipeline.catalogue import LOCAL_KM, _nearest, _read_cities, load_overrides
+    noaa = json.loads((REAL_INPUTS / "noaa-tidepredictions.json").read_text(encoding="utf-8"))["stations"]
+    cities = _read_cities(REAL_INPUTS)
+    blank = [s for s in noaa if not (s.get("state") or "").strip()]
+    _, km = _nearest([float(s["lat"]) for s in blank], [float(s["lng"]) for s in blank],
+                     np.array([float(r[4]) for r in cities]), np.array([float(r[5]) for r in cities]))
+    overrides = load_overrides()
+    missing = [s["id"] for s, k in zip(blank, km) if k > LOCAL_KM and str(s["id"]) not in overrides]
+    assert missing == []

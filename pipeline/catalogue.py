@@ -215,13 +215,30 @@ def read_countries(inputs: Path) -> dict[str, tuple[str, str]]:
 
 # --- the catalogue -------------------------------------------------------------------------
 
-def build_catalogue(inputs: Path, coast: Path) -> list[dict]:
+OVERRIDES = Path(__file__).with_name("catalogue_overrides.json")
+
+
+def load_overrides(path: Path = OVERRIDES) -> dict[str, dict]:
+    """Per NOAA id: ``cc`` (country), ``state`` (US state code) and/or corrected ``lat``/``lon``."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    return {k: v for k, v in data.items() if not k.startswith("_")}
+
+
+def build_catalogue(inputs: Path, coast: Path, overrides: dict[str, dict] | None = None) -> list[dict]:
     inputs = Path(inputs)
+    overrides = load_overrides() if overrides is None else overrides
     cities = _read_cities(inputs)
     admin1 = _read_codes(inputs / "admin1CodesASCII.txt")
     admin2 = _read_codes(inputs / "admin2Codes.txt")
     countries = read_countries(inputs)
     noaa = json.loads((inputs / "noaa-tidepredictions.json").read_text(encoding="utf-8"))["stations"]
+    fixed = []
+    for st in noaa:  # our corrections for remote stations and a few wrong NOAA longitudes
+        o = overrides.get(str(st["id"]), {})
+        st = {**st, **({"lat": o["lat"]} if "lat" in o else {}), **({"lng": o["lon"]} if "lon" in o else {}),
+              **({"state": o["state"]} if "state" in o else {}), "_cc": o.get("cc")}
+        fixed.append(st)
+    noaa = fixed
 
     c_lat = np.array([float(r[4]) for r in cities])
     c_lon = np.array([float(r[5]) for r in cities])
@@ -256,7 +273,13 @@ def build_catalogue(inputs: Path, coast: Path) -> list[dict]:
         c = cities[ni]
         local = nkm <= LOCAL_KM
         state = (s.get("state") or "").strip()
-        if state and f"US.{state}" in admin1:
+        if s["_cc"]:  # overridden country: its name as the region, its own zone only from a place in it
+            cc = s["_cc"]
+            region, rslug = region_of(cc, "")
+            county = None
+            local = local and c[8] == cc
+            local_tz = None
+        elif state and f"US.{state}" in admin1:
             cc, (region, rslug) = "US", region_of("US", state)
             county = county_of("US", state, c[11]) if (c[8] == "US" and c[10] == state and nkm <= 50) else None
             if not local and state in state_zone:  # a remote gauge: the zone of its state's nearest place
@@ -277,6 +300,8 @@ def build_catalogue(inputs: Path, coast: Path) -> list[dict]:
             "type": "gauge", "_pop": 0,
         })
     gauges.sort(key=lambda r: r["id"])
+    for g in gauges:
+        g["_suffix"] = slugify(g["id"][1:]) or "gauge"
 
     # Places: coastal, then deduplicated, biggest first.
     dist = CoastIndex(coast_points(json.loads(Path(coast).read_text(encoding="utf-8")))).distance_km(c_lat, c_lon)
@@ -295,7 +320,7 @@ def build_catalogue(inputs: Path, coast: Path) -> list[dict]:
         kept.append(k)
 
     places = []
-    for k in kept:
+    for k in sorted(kept, key=lambda k: (-c_pop[k], int(cities[k][0]))):
         r = cities[k]
         cc = r[8]
         region, rslug = region_of(cc, r[10])
@@ -303,18 +328,20 @@ def build_catalogue(inputs: Path, coast: Path) -> list[dict]:
             "id": f"g{r[0]}", "name": r[1], "_slug": slugify(r[1]) or slugify(r[2]) or f"place-{r[0]}",
             "country_code": cc, "region_name": region, "region_slug": rslug, "county": county_of(cc, r[10], r[11]),
             "latitude": round(float(r[4]), 6), "longitude": round(float(r[5]), 6),
-            "timezone": r[17] or "UTC", "type": "place", "_pop": int(c_pop[k]),
+            "timezone": r[17] or "UTC", "type": "place", "_pop": int(c_pop[k]), "_suffix": r[0],
         })
 
-    # Unique paths, gauges first.
+    # Unique paths. Places claim first, biggest first, so "boston" is the city; anything that
+    # collides takes its own id as a suffix (GeoNames id, NOAA id), which never changes.
     taken: set[str] = set()
     out = []
-    for rec in gauges + places:
+    for rec in places + gauges:
         base = rec.pop("_slug")
+        suffix = rec.pop("_suffix")
         slug, n = base, 1
         while f"{rec['country_code'].lower()}/{rec['region_slug']}/{slug}" in taken:
+            slug = f"{base}-{suffix}" if n == 1 else f"{base}-{suffix}-{n}"
             n += 1
-            slug = f"{base}-{n}"
         path = f"{rec['country_code'].lower()}/{rec['region_slug']}/{slug}"
         taken.add(path)
         out.append({

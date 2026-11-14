@@ -50,3 +50,14 @@ test("search fits a 320 px phone", async ({ page }) => {
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(320);
 });
+
+test("Enter right after typing opens the new query's result, not the old one", async ({ page }) => {
+  await page.goto("/wave-map");
+  await page.getByRole("button", { name: "Search" }).click();
+  const box = page.getByRole("combobox");
+  await box.fill("new york");
+  await expect(page.locator("#station-results [role=option]").first()).toContainText("New York City");
+  await box.fill("honolulu");
+  await box.press("Enter"); // inside the 80 ms debounce
+  await expect(page).toHaveURL(/\/us\/hawaii\/honolulu$/);
+});

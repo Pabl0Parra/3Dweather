@@ -75,3 +75,11 @@ def test_site_builds_with_the_catalogue_and_publishes_changed_files():
     assert 'if [ -z "$R2_BUCKET" ]; then' in t  # forks and pre-setup: build, publish nothing
     for name in ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET"):
         assert f"secrets.{name}" in t
+
+
+def test_site_fails_on_a_broken_catalogue_download_and_follows_static_assets():
+    t = text("site.yml")
+    assert "workflow_run:" in t and "workflows: [Static assets]" in t and "types: [completed]" in t
+    assert "github.event.workflow_run.conclusion == 'success'" in t
+    # Exit 3 (no catalogue yet) builds without stations; any other failure stops the job.
+    assert 'if [ "$code" -eq 3 ]; then' in t and 'exit "$code"' in t

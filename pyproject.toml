@@ -18,6 +18,9 @@ tides = ["h5py==3.16.0"]
 [tool.setuptools]
 packages = ["pipeline", "pipeline.sources"]
 
+[tool.setuptools.package-data]
+pipeline = ["catalogue_overrides.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["reference: needs the local reference/ folder"]

@@ -79,6 +79,13 @@ Check it worked: `https://pub-….r2.dev/wx/latest.json` should name the run.
    `site-manifest.json` in the bucket remembers what was published, so pages
    that leave the catalogue are deleted. It never touches `wx/`, `assets/` or
    `catalogue/`. The first upload sends every page and takes several minutes.
+   Site also runs by itself after each successful Static assets run, so a new
+   catalogue gets its pages at once. Two safety stops: if the catalogue cannot
+   be downloaded the job fails instead of publishing a site without station
+   pages, and a publish that would delete more than 10 % of the site stops
+   (run `python -m pipeline publish-site --allow-mass-delete` by hand if that
+   is really intended). Replaced `_astro/` scripts stay two days, so pages
+   cached before a deploy keep working.
 
 Check it: `https://pub-….r2.dev/us/new-york/new-york-city` should show the New
 York City page.

@@ -22,7 +22,8 @@ const names = (es: { name: string }[]) => es.map((e) => e.name);
 
 test("fold strips accents, case and punctuation", () => {
   expect(fold("São Paulo")).toBe("sao paulo");
-  expect(fold("St. John's")).toBe("st john s");
+  expect(fold("St. John's")).toBe("st johns"); // apostrophes join, other punctuation splits
+  expect(fold("O’Brien")).toBe("obrien");
   expect(fold("  NEW   York ")).toBe("new york");
 });
 
@@ -51,7 +52,7 @@ test("accents and punctuation in the query", () => {
   expect(names(search(C, "sao paulo"))).toEqual(["São Paulo de Olivença"]);
   expect(names(search(C, "São"))).toEqual(["São Paulo de Olivença"]);
   expect(names(search(C, "st. john's"))).toEqual(["St. John's"]);
-  expect(names(search(C, "st johns"))).toEqual([]); // "john s" is two words; "johns" is not a prefix of either
+  expect(names(search(C, "st johns"))).toEqual(["St. John's"]);
   expect(names(search(C, "st john"))).toEqual(["St. John's"]);
 });
 

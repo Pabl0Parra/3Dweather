@@ -8,6 +8,10 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # A rebuilt catalogue (search.json) needs pages for its new paths straight away.
+  workflow_run:
+    workflows: [Static assets]
+    types: [completed]
 
 concurrency:
   group: site
@@ -18,6 +22,7 @@ permissions:
 
 jobs:
   publish:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -43,8 +48,16 @@ jobs:
         run: |
           if [ -z "$R2_BUCKET" ]; then
             echo "::notice::R2 secrets are not set: building without station pages (see docs/deploy.md)"
-          elif ! python -m pipeline get --key catalogue/stations.json --out "$RUNNER_TEMP/stations.json" --store r2; then
+            exit 0
+          fi
+          code=0
+          python -m pipeline get --key catalogue/stations.json --out "$RUNNER_TEMP/stations.json" --store r2 || code=$?
+          if [ "$code" -eq 3 ]; then
             echo "::notice::catalogue/stations.json is not in the bucket yet: run Static assets first"
+          elif [ "$code" -ne 0 ]; then
+            # Building without it would publish a site with no station pages.
+            echo "::error::could not download the station catalogue"
+            exit "$code"
           fi
       - name: Build
         working-directory: web
