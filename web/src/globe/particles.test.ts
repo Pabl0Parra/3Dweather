@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { LandGrid } from "./field";
-import { particleCount, Particles, segmentOk, spawnOnDisk, stepPoint } from "./particles";
+import { flowSteps, particleCount, Particles, segmentOk, spawnOnDisk, stepPoint } from "./particles";
 import { project } from "./view";
 
 const seq = (x: number) => () => x;
@@ -61,4 +61,11 @@ test("spawn lands on the visible sea", () => {
     expect(land.isLand(lat, lon)).toBe(false);
     expect(project({ lat0: 0, lon0: 0, zoom: 1 }, 800, 600, lat, lon).visible).toBe(true);
   }
+});
+
+test("reduced motion pre-runs trails only for fresh particles", () => {
+  expect(flowSteps(true, true)).toBe(14);
+  expect(flowSteps(true, false)).toBe(1);
+  expect(flowSteps(false, true)).toBe(1);
+  expect(flowSteps(false, false)).toBe(1);
 });

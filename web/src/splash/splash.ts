@@ -7,6 +7,7 @@ import { HOLD_S, INTRO_S, introAt, scramble } from "./intro";
 const WORD = "3DWEATHER";
 const TAGLINE = "Seven days of ocean, live.";
 const CHROME = ".site-header, .controls, .credits";
+const MAX_HOLD_MS = 6000; // with the 2.45 s run-up, the splash never lasts much over 8 s
 
 function runLabel(run: string | undefined): string {
   if (!run) return "RUN ——";
@@ -32,8 +33,9 @@ export function playSplash(
       if (finished) return;
       finished = true;
       cancelAnimationFrame(raf);
+      clearTimeout(holdTimer);
       tl?.cancel();
-      ["pointerdown", "keydown", "wheel"].forEach((t) => window.removeEventListener(t, finish, true));
+      ["pointerdown", "keydown", "wheel"].forEach((t) => window.removeEventListener(t, skip, true));
       globe.setIntro(null);
       html.classList.remove("splash-pending");
       chrome.forEach((el) => { el.style.opacity = ""; el.style.transform = ""; });
@@ -41,7 +43,20 @@ export function playSplash(
       resolve();
     };
     let raf = 0;
+    let holdTimer = 0;
     let tl: ReturnType<typeof animate> | null = null;
+    // Input that skips the splash only skips it: it must not also reach the globe,
+    // the timeline's Space key, or controls that are still invisible.
+    const skip = (e: Event) => {
+      e.stopPropagation();
+      if (e.type === "keydown") e.preventDefault();
+      if (e.type === "pointerdown") {
+        const eat = (c: Event) => { c.stopPropagation(); c.preventDefault(); };
+        window.addEventListener("click", eat, { capture: true, once: true });
+        setTimeout(() => window.removeEventListener("click", eat, true), 600);
+      }
+      finish();
+    };
 
     if (opts.reduced) {
       // Reduced motion: a short fade from black, no particles in flight.
@@ -77,14 +92,19 @@ export function playSplash(
 
     let ready = false, holding = false;
     opts.dataReady.then(
-      () => { ready = true; if (holding) { holding = false; tl!.play(); } },
+      () => { ready = true; if (holding) { holding = false; clearTimeout(holdTimer); tl!.play(); } },
       () => finish(), // the forecast failed: end on the globe, whose retry notice is showing
     );
 
     const rand = Math.random;
     const tick = () => {
       const t = tl!.time;
-      if (t >= HOLD_S && !ready && !holding) { holding = true; tl!.pause(); }
+      if (t >= HOLD_S && !ready && !holding) {
+        holding = true;
+        tl!.pause();
+        // A stalled connection may never succeed or fail: don't hold the page hostage.
+        holdTimer = window.setTimeout(finish, MAX_HOLD_MS);
+      }
       globe.setIntro(introAt(holding ? HOLD_S : t));
       const info = globe.info();
       const r = clamp01((t - 0.3) / 0.5);
@@ -99,6 +119,6 @@ export function playSplash(
     };
     raf = requestAnimationFrame(tick);
     tl.then(() => { if (!holding) finish(); });
-    ["pointerdown", "keydown", "wheel"].forEach((t) => window.addEventListener(t, finish, true));
+    ["pointerdown", "keydown", "wheel"].forEach((t) => window.addEventListener(t, skip, true));
   });
 }

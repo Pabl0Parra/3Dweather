@@ -27,6 +27,15 @@ export function stepPoint(lat: number, lon: number, u: number, v: number): [numb
   return [lat + dlat, wrapLon(lon + dlon)];
 }
 
+/**
+ * Steps to run before a draw. Reduced motion pre-runs a full trail only for freshly
+ * spawned particles; later redraws (view or hour changes) advance one step, never a
+ * whole trail per frame.
+ */
+export function flowSteps(reduced: boolean, fresh: boolean): number {
+  return reduced && fresh ? TRAIL : 1;
+}
+
 /** A trail segment is drawn only if it is short on screen (long ones wrap or cross the limb). */
 export function segmentOk(ax: number, ay: number, bx: number, by: number, r: number): boolean {
   return Math.hypot(bx - ax, by - ay) <= 0.25 * r;

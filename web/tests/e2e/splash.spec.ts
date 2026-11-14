@@ -62,3 +62,34 @@ test("reduced motion gets a short fade only", async ({ page }) => {
   await page.goto("/wave-map?debug#20,0,1");
   await expect(page.locator(".splash")).toHaveCount(0, { timeout: 800 });
 });
+
+test.describe("skipping", () => {
+  test.use({ reducedMotion: "no-preference" });
+
+  test("a click that skips the splash does nothing else", async ({ page }) => {
+    await page.goto("/wave-map?debug#20,-30,1");
+    await expect(page.locator(".splash")).toBeAttached();
+    await page.waitForTimeout(600);
+    const box = (await page.locator("#globe").boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(page.locator(".splash")).toHaveCount(0);
+    await page.waitForTimeout(300);
+    await expect(page.getByRole("dialog", { name: "Conditions here" })).toBeHidden();
+  });
+
+  test("Space that skips the splash does not pause playback", async ({ page }) => {
+    await page.goto("/wave-map?debug#20,0,1");
+    await page.waitForFunction(() => (window as any).__globe?.ready === true);
+    await expect(page.locator(".splash")).toBeAttached();
+    await page.keyboard.press("Space");
+    await expect(page.locator(".splash")).toHaveCount(0);
+    await expect(page.locator(".tl-play")).toHaveAttribute("aria-label", "Pause");
+  });
+
+  test("a stalled download does not hold the splash forever", async ({ page }) => {
+    await page.route("**/globe-w*.webp", () => { /* never answer */ });
+    await page.goto("/wave-map?debug#20,0,1");
+    await expect(page.locator(".splash")).toHaveCount(0, { timeout: 12_000 });
+    await expect(page.locator(".site-header")).toHaveCSS("opacity", "1");
+  });
+});

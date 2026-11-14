@@ -1,6 +1,6 @@
 // Mounts the globe: canvases, data loading, view state and the draw loop.
 import { landGridFrom, sampleWave, type LandGrid } from "./field";
-import { particleCount, Particles, spawnOnDisk, TRAIL } from "./particles";
+import { flowSteps, particleCount, Particles, spawnOnDisk } from "./particles";
 import { FrameStore, RETRY_DELAYS_MS, LOAD_NOTICE } from "./frames";
 import { attachGestures } from "./gestures";
 import { formatHash, parseHash } from "./hash";
@@ -259,9 +259,10 @@ export async function initGlobe(
       const p = project(dv, w, h, lat, lon);
       return !p.visible || p.x < -20 || p.y < -20 || p.x > w + 20 || p.y > h + 20;
     };
-    if (particles.count !== want) particles.resize(want, spawn);
-    // Reduced motion: pre-run a full trail and draw it once, without animating.
-    for (let k = reducedMotion ? TRAIL : 1; k > 0; k--) particles.step(waveField, spawn, gone);
+    const fresh = particles.count !== want;
+    if (fresh) particles.resize(want, spawn);
+    // Reduced motion: still trails, pre-run once when spawned and redrawn only on change.
+    for (let k = flowSteps(reducedMotion, fresh); k > 0; k--) particles.step(waveField, spawn, gone);
     flowStale = false;
     fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     fctx.clearRect(0, 0, w, h);
@@ -347,7 +348,7 @@ export async function initGlobe(
   // The first failure rejects `loaded` (the splash stops waiting); loading itself keeps retrying.
   handle.loaded = new Promise<void>((resolve, reject) => {
     failLoad = () => reject(new Error(LOAD_NOTICE));
-    load().then(resolve);
+    load().then(resolve, (err) => { console.error(err); reject(err); });
   });
   handle.loaded.catch(() => {});
   return handle;
