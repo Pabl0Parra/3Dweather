@@ -1,0 +1,28 @@
+# Builds the static globe assets (land mask, coastline) from Natural Earth and
+# uploads them to R2 under assets/globe/. Run by hand when the art changes.
+name: Static assets
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -e ".[publish]"
+      - run: python -m pipeline static --cache "$RUNNER_TEMP/cache" --out "$RUNNER_TEMP/static"
+      - run: python -m pipeline upload --src "$RUNNER_TEMP/static" --prefix assets/globe --max-age 604800 --store r2

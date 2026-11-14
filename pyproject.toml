@@ -12,6 +12,7 @@ dependencies = ["numpy", "omfiles", "pillow"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
+publish = ["boto3==1.42.97"]
 
 [tool.setuptools]
 packages = ["pipeline", "pipeline.sources"]

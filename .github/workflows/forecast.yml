@@ -1,0 +1,60 @@
+# Builds each 6-hourly forecast run and publishes it to Cloudflare R2 (spec §5, §7).
+# Without the R2 secrets (forks, or before setup) scheduled runs do nothing; a manual
+# run builds into a local folder and skips the upload, so the build can be tried.
+name: Forecast run
+
+on:
+  schedule:
+    - cron: '15 5,11,17,23 * * *'  # about 5 h 15 min after 00/06/12/18Z
+    - cron: '15 0,6,12,18 * * *'   # an hour later: retry for late or skipped starts
+  workflow_dispatch:
+    inputs:
+      run:
+        description: 'Model run to build, YYYYMMDDHH (empty: the one due now)'
+        required: false
+
+concurrency:
+  group: forecast
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      RUN: ${{ inputs.run }}
+      EVENT: ${{ github.event_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -e ".[publish]"
+      - name: Natural Earth files (pinned release, cached between runs)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/cache/naturalearth
+          key: naturalearth-v5.1.2
+      - name: Build, publish, prune
+        # Exit code 2: inputs still incomplete after 90 min of waiting; the job fails loudly.
+        run: |
+          if [ -z "$R2_BUCKET" ] && [ "$EVENT" = schedule ]; then
+            echo "::notice::R2 secrets are not set: scheduled runs do nothing until they are (see docs/deploy.md)"
+            exit 0
+          fi
+          ARGS=(--cache "$RUNNER_TEMP/cache" --out "$RUNNER_TEMP/wx")
+          if [ -n "$RUN" ]; then ARGS+=(--run "$RUN"); fi
+          if [ -n "$R2_BUCKET" ]; then
+            python -m pipeline cycle "${ARGS[@]}" --store r2
+          else
+            echo "::notice::R2 secrets are not set: building without uploading (see docs/deploy.md)"
+            python -m pipeline cycle "${ARGS[@]}" --store dir:"$RUNNER_TEMP/bucket"
+          fi

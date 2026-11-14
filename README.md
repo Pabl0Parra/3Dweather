@@ -5,8 +5,10 @@ currents and tides on a 3D Earth, built from open forecast data. Scheduled jobs
 turn each model run into static image files; the site reads those files and
 needs no server.
 
-Status: phase 1, the Python pipeline that builds the wave layer. The design is
-in `docs/superpowers/specs/`.
+Status: the globe has five layers (rain and cloud, wind, temperature, waves,
+currents), built every 6 hours by GitHub Actions and published to Cloudflare R2.
+The design is in `docs/superpowers/specs/`; publishing setup is in
+[`docs/deploy.md`](docs/deploy.md).
 
 ## Data credits
 
@@ -25,14 +27,23 @@ python -m venv .venv
 .venv/Scripts/python -m pytest
 ```
 
-Build the wave sprites for one model run:
+Build every globe layer for one model run:
 
 ```
 python -m pipeline build --run 2026111306 --cache <cache dir> --out <output dir>
 ```
 
 Inputs are downloaded into `<cache dir>/<run>/`, so one cache folder can serve
-many runs. Exit code 2 means the run is not fully published yet; try again later.
+many runs. Add `--prune` to delete each input once used (a run needs about
+16 GB otherwise). Exit code 2 means the run is not fully published yet; try
+again later.
+
+The scheduled job runs `python -m pipeline cycle`, which picks the run that is
+due, waits for its inputs, builds, uploads and prunes (see `docs/deploy.md`).
+
+The site lives in `web/` (Astro): `npm ci`, `npm run dev`, `npx vitest run`,
+`npx playwright test` (the end-to-end tests need a run built into
+`web/public/wx` and the static assets in `web/public/assets/globe`).
 
 Tests marked `reference` compare the output with locally kept reference
 material in `reference/` (not in the repository) and are skipped without it.
