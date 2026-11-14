@@ -34,6 +34,8 @@ def test_keepalive_monthly_with_write_permission():
 def test_ci_runs_both_suites():
     t = text("ci.yml")
     assert 'pytest -m "not reference"' in t and "npx vitest run" in t and "npm run build" in t
+    # The tide and sky tests run too (they skip without h5py or skyfield); DE421 is cached.
+    assert '.[dev,publish,tides,sky]' in t and "path: sky-cache" in t and "SKY_CACHE: sky-cache" in t
 
 
 def test_no_secret_values_in_workflows():
