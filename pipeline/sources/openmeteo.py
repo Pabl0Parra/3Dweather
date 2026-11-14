@@ -9,24 +9,36 @@ import gc
 import json
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
 import numpy as np
 import omfiles
 
-from ..regrid import SourceGrid
+from ..regrid import ReducedGaussian, SourceGrid
 
 BUCKET_URL = "https://openmeteo.s3.amazonaws.com/data_spatial"
 
-MODELS: dict[str, SourceGrid] = {
+_MERCATOR = SourceGrid(lat0=-79.958336, lon0=-179.95833, dlat=1 / 12, dlon=1 / 12)
+
+MODELS: dict[str, SourceGrid | ReducedGaussian] = {
     "ncep_gfswave025": SourceGrid(lat0=-90.0, lon0=-180.0, dlat=0.25, dlon=0.25),
+    "ncep_gfs013": SourceGrid(lat0=-89.912125, lon0=-180.0, dlat=179.82425 / 1535, dlon=360 / 3072),
+    "ncep_gfs025": SourceGrid(lat0=-90.0, lon0=-180.0, dlat=0.25, dlon=0.25),
+    "ecmwf_ifs": ReducedGaussian(1280),
+    "meteofrance_currents": _MERCATOR,
+    "meteofrance_sea_surface_temperature": _MERCATOR,
 }
 
 
 class RunIncomplete(Exception):
     """The bucket does not (yet) hold everything this run needs."""
+
+
+class VariableAbsent(RunIncomplete):
+    """The run has this valid time, but its file does not carry the variable
+    (GFS has no cloud cover or rain at the analysis hour)."""
 
 
 def http_fetch(url: str, dest: Path) -> None:
@@ -55,14 +67,15 @@ def _stamp(t: datetime) -> str:
 
 class OpenMeteoRun:
     def __init__(self, model: str, run: datetime, cache_dir: Path,
-                 fetch: Callable[[str, Path], None] = http_fetch):
+                 fetch: Callable[[str, Path], None] = http_fetch, cache_run: datetime | None = None):
         self.model = model
         self.run = run
-        # Keyed by run: two runs share valid times, so a per-model folder would
-        # silently serve one run's files to another.
-        self.dir = Path(cache_dir) / run.strftime("%Y%m%d%H") / model
+        # Keyed by the globe run being built (default: this model run). Two runs share
+        # valid times, so a per-model folder would serve one run's files to another.
+        self.dir = Path(cache_dir) / (cache_run or run).strftime("%Y%m%d%H") / model
         self.fetch = fetch
         self._meta: dict | None = None
+        self._absent: dict[str, set[str]] | None = None
 
     @property
     def source_grid(self) -> SourceGrid:
@@ -107,15 +120,41 @@ class OpenMeteoRun:
         packed = self.dir / variable / f"{stamp}.npz"
         if packed.exists():
             return _read_npz(packed)
+        if variable in self._absent_list().get(stamp, ()):
+            raise VariableAbsent(f"{self.model} {stamp} has no {variable}")
         om = self.dir / f"{stamp}.om"
         if om.exists():
             try:
                 return _read_om(om, variable)
+            except VariableAbsent:
+                raise
             except Exception:
                 om.unlink()  # unreadable cache entry: fetch it again, once
         self._require(variable, valid_time)
         self.fetch(self._url(om.name), om)
         return _read_om(om, variable)
+
+    def field_or_none(self, variable: str, valid_time: datetime) -> np.ndarray | None:
+        """Like field(), but None when the file for that time lacks the variable."""
+        try:
+            return self.field(variable, valid_time)
+        except VariableAbsent:
+            return None
+
+    def has_time(self, valid_time: datetime) -> bool:
+        return valid_time.strftime("%Y-%m-%dT%H:%MZ") in self.meta().get("valid_times", [])
+
+    def _absent_list(self) -> dict[str, set[str]]:
+        """absent.txt, written by tools/save_reference_inputs.py: `<stamp>: var, var`."""
+        if self._absent is None:
+            self._absent = {}
+            path = self.dir / "absent.txt"
+            if path.exists():
+                for line in path.read_text().splitlines():
+                    stamp, _, names = line.partition(":")
+                    self._absent.setdefault(stamp.strip(), set()).update(
+                        n.strip() for n in names.split(",") if n.strip())
+        return self._absent
 
     def _require(self, variable: str, valid_time: datetime) -> None:
         meta = self.meta()
@@ -141,7 +180,10 @@ def _read_om(path: Path, variable: str) -> np.ndarray:
     reader = omfiles.OmFileReader(str(path))
     child = None
     try:
-        child = reader.get_child_by_name(variable)
+        try:
+            child = reader.get_child_by_name(variable)
+        except ValueError as exc:
+            raise VariableAbsent(f"{path.name} has no {variable}") from exc
         data = np.asarray(child[:], dtype=np.float32)
     finally:
         child = None
@@ -149,3 +191,28 @@ def _read_om(path: Path, variable: str) -> np.ndarray:
         del reader
         gc.collect()  # Windows keeps the file locked while reader objects are alive
     return data
+
+
+def resolve_daily_run(model: str, globe_run: datetime, cache_dir: Path,
+                      fetch: Callable[[str, Path], None] = http_fetch) -> datetime:
+    """The daily (00Z) run to use for a globe run: the one already chosen for it in
+    the cache, else the newest completed run from T's date back 3 days."""
+    cached = Path(cache_dir) / globe_run.strftime("%Y%m%d%H") / model / "meta.json"
+    if cached.exists():
+        try:
+            meta = json.loads(cached.read_text())
+            if meta.get("completed") and meta.get("reference_time"):
+                return datetime.strptime(meta["reference_time"][:13], "%Y-%m-%dT%H").replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+        cached.unlink(missing_ok=True)
+    day = globe_run.replace(hour=0, minute=0, second=0, microsecond=0)
+    for back in range(4):
+        candidate = day - timedelta(days=back)
+        src = OpenMeteoRun(model, candidate, cache_dir, fetch, cache_run=globe_run)
+        try:
+            if src.meta().get("completed"):
+                return candidate
+        except RunIncomplete:
+            continue
+    raise RunIncomplete(f"no completed {model} run in the 4 days up to {day:%Y-%m-%d}")

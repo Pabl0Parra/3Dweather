@@ -193,3 +193,79 @@ def test_short_download_is_rejected(tmp_path, monkeypatch):
     with pytest.raises(OSError, match="100 of 1000"):
         http_fetch("https://example.invalid/file.om", dest)
     assert not dest.exists() and not (tmp_path / "file.om.part").exists()
+
+
+# --- phase 3a: more models, cache keyed by globe run, absent variables, daily runs ---
+import urllib.error
+from datetime import timedelta
+
+from pipeline.sources.openmeteo import resolve_daily_run
+
+
+def test_cache_folder_follows_cache_run(tmp_path):
+    src = OpenMeteoRun("ecmwf_ifs", RUN - timedelta(hours=6), tmp_path, cache_run=RUN)
+    assert src.dir == tmp_path / "2026111306" / "ecmwf_ifs"
+
+
+def test_every_model_has_a_grid():
+    for m in ("ncep_gfswave025", "ncep_gfs013", "ncep_gfs025", "ecmwf_ifs",
+              "meteofrance_currents", "meteofrance_sea_surface_temperature"):
+        assert m in openmeteo.MODELS
+
+
+def test_absent_variable_from_cache_list_is_none(tmp_path):
+    write_meta(tmp_path, variables=("wave_height", "cloud_cover"))
+    (run_dir(tmp_path) / "absent.txt").write_text("2026-11-13T0600: cloud_cover, precipitation\n")
+    src = OpenMeteoRun(MODEL, RUN, tmp_path, fetch=FakeFetch())
+    assert src.field_or_none("cloud_cover", T0) is None
+
+
+def test_absent_variable_in_om_file_is_none(tmp_path):
+    write_meta(tmp_path, variables=("wave_height", "cloud_cover"))
+    write_om(run_dir(tmp_path) / "2026-11-13T0600.om", "wave_height", np.ones((2, 2)))
+    src = OpenMeteoRun(MODEL, RUN, tmp_path, fetch=FakeFetch())
+    assert src.field_or_none("cloud_cover", T0) is None
+    assert src.field_or_none("wave_height", T0)[0, 0] == 1.0
+
+
+def test_has_time(tmp_path):
+    write_meta(tmp_path)
+    src = OpenMeteoRun(MODEL, RUN, tmp_path, fetch=FakeFetch())
+    assert src.has_time(T0) and not src.has_time(T3)
+
+
+class MetaFetch:
+    """Serves meta.json for the listed run dates (YYYY/MM/DD), 404 otherwise."""
+    def __init__(self, completed_days):
+        self.days, self.calls = completed_days, []
+
+    def __call__(self, url, dest):
+        self.calls.append(url)
+        for day in self.days:
+            if f"/{day}/0000Z/meta.json" in url:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                ref = day.replace("/", "-") + "T00:00:00Z"
+                dest.write_text(meta_json(reference_time=ref))
+                return
+        raise urllib.error.HTTPError(url, 404, "not found", None, None)
+
+
+def test_daily_run_prefers_cached_meta(tmp_path):
+    d = tmp_path / "2026111306" / "meteofrance_currents"
+    d.mkdir(parents=True)
+    (d / "meta.json").write_text(meta_json(reference_time="2026-11-12T00:00:00Z"))
+    fetch = MetaFetch([])
+    got = resolve_daily_run("meteofrance_currents", RUN, tmp_path, fetch)
+    assert got == datetime(2026, 11, 12, tzinfo=timezone.utc) and fetch.calls == []
+
+
+def test_daily_run_walks_back_to_a_completed_run(tmp_path):
+    fetch = MetaFetch(["2026/11/12"])
+    got = resolve_daily_run("meteofrance_currents", RUN, tmp_path, fetch)
+    assert got == datetime(2026, 11, 12, tzinfo=timezone.utc)
+    assert any("2026/11/13/0000Z" in c for c in fetch.calls)
+
+
+def test_daily_run_gives_up_after_four_days(tmp_path):
+    with pytest.raises(RunIncomplete):
+        resolve_daily_run("meteofrance_currents", RUN, tmp_path, MetaFetch([]))

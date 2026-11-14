@@ -18,6 +18,13 @@ class SourceGrid:
     wrap: bool = True
 
 
+@dataclass(frozen=True)
+class ReducedGaussian:
+    """ECMWF octahedral reduced Gaussian grid O<n>: 2n rows, row i from the
+    north holds 4(i+1)+16 points (mirrored south), starting at longitude 0."""
+    n: int
+
+
 def regrid_bilinear(src: np.ndarray, sg: SourceGrid, grid: GlobeGrid) -> np.ndarray:
     """Sample src at every globe cell centre. A cell whose four neighbours are all
     missing is NaN; otherwise only the valid neighbours contribute."""
