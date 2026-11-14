@@ -40,3 +40,10 @@ def test_no_secret_values_in_workflows():
     for f in WF.glob("*.yml"):
         body = f.read_text(encoding="utf-8")
         assert "r2.cloudflarestorage.com" not in body, f.name  # the endpoint is built from the secret in code
+
+
+def test_scheduled_runs_without_secrets_do_nothing():
+    """No dry-run builds on the schedule before setup or on forks (each one downloads ~16 GB)."""
+    t = text("forecast.yml")
+    assert "EVENT: ${{ github.event_name }}" in t
+    assert 'if [ -z "$R2_BUCKET" ] && [ "$EVENT" = schedule ]; then' in t

@@ -24,26 +24,28 @@ def due_run(now: datetime) -> datetime:
 
 def cycle(now: datetime, cache_dir: Path, out_dir: Path, store: Store, *, run: datetime | None = None,
           build: Callable | None = None, sleep: Callable[[float], None] = time.sleep,
+          clock: Callable[[], float] = time.monotonic,
           wait: timedelta = timedelta(minutes=90), poll: timedelta = timedelta(minutes=10)) -> int:
-    """0: published (or already current); 2: inputs still incomplete after `wait`."""
+    """0: published (or already current); 2: inputs still incomplete `wait` after the first
+    attempt (wall clock, build attempts included)."""
     build = build or build_run
     run = run or due_run(now)
     current = published_run(store)
     if current is not None and current >= run:
         print(f"up to date: {current:%Y%m%d%H} is published (due {run:%Y%m%d%H})")
         return 0
-    waited = timedelta(0)
+    start = clock()
     while True:
         try:
             folder = build(run, cache_dir, out_dir, prune=True)
             break
         except RunIncomplete as exc:
-            if waited >= wait:
-                print(f"not built: {exc} (waited {int(waited.total_seconds() // 60)} min)", file=sys.stderr)
+            waited = clock() - start
+            if waited >= wait.total_seconds():
+                print(f"not built: {exc} (waited {int(waited // 60)} min)", file=sys.stderr)
                 return 2
             print(f"waiting: {exc}", file=sys.stderr)
-            sleep(poll.total_seconds())
-            waited += poll
+            sleep(min(poll.total_seconds(), wait.total_seconds() - waited))
     publish_run(store, folder, run, datetime.now(timezone.utc))
     gone = prune_runs(store, keep_from=run - KEEP)
     print(f"published {run:%Y%m%d%H}" + (f"; pruned {', '.join(gone)}" if gone else ""))

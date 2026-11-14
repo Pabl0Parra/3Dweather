@@ -93,7 +93,10 @@ web/public/assets/globe`).
 - `python -m pipeline cycle` always deletes downloaded inputs as it goes
   (`--prune`); never point its `--cache` at a folder of saved inputs you want
   to keep, such as `reference/openmeteo-inputs`.
-- Forks and runs without the secrets build into a temporary folder and skip
-  the upload, with a notice in the log.
+- Without the secrets (before setup, or on a fork) scheduled runs do nothing
+  but print a notice. A manual run builds into a temporary folder and skips the
+  upload, which is a way to try the build.
+- An explicit run that is not newer than the published one is skipped: the
+  published run never moves backwards.
 - The **Keep-alive** workflow makes an empty commit on the 1st of each month,
   because GitHub pauses scheduled workflows after 60 days without activity.

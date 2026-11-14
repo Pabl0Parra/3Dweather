@@ -70,8 +70,14 @@ def test_waits_for_late_inputs(tmp_path):
 def test_gives_up_after_the_wait_and_leaves_latest(tmp_path):
     store = DirStore(tmp_path / "bucket")
     store.put_bytes("wx/latest.json", b'{"dir":"2026111400"}', "application/json", "x")
-    build, slept = FakeBuild(fail=99), []
-    assert cycle(NOW, tmp_path / "cache", tmp_path / "out", store, build=build, sleep=slept.append) == 2
+    build, slept, now = FakeBuild(fail=99), [], [0.0]
+
+    def sleep(s):
+        slept.append(s)
+        now[0] += s
+
+    assert cycle(NOW, tmp_path / "cache", tmp_path / "out", store, build=build, sleep=sleep,
+                 clock=lambda: now[0]) == 2
     assert sum(slept) == 90 * 60 and len(build.calls) == 10
     assert published_run(store) == at("2026-11-14 00:00")
 
@@ -105,3 +111,21 @@ def test_cli_upload(tmp_path):
     main(["upload", "--src", str(tmp_path / "s"), "--prefix", "assets/globe", "--max-age", "604800",
           "--store", f"dir:{tmp_path / 'bucket'}"])
     assert DirStore(tmp_path / "bucket").headers("assets/globe/coast.json")["cache_control"] == "public, max-age=604800"
+
+
+def test_the_wait_is_wall_clock_including_build_attempts(tmp_path):
+    """A build attempt that downloads for 50 minutes before finding a late input counts towards the 90."""
+    now = [0.0]
+    build = FakeBuild(fail=99)
+    real = build.__call__
+
+    def slow_build(run, cache_dir, out_dir, **kw):
+        now[0] += 50 * 60
+        return real(run, cache_dir, out_dir, **kw)
+
+    def sleep(s):
+        now[0] += s
+
+    code = cycle(NOW, tmp_path / "cache", tmp_path / "out", DirStore(tmp_path / "bucket"), build=slow_build,
+                 sleep=sleep, clock=lambda: now[0])
+    assert code == 2 and len(build.calls) == 2  # 0-50 min, sleep to 60, 60-110 min: past the deadline
