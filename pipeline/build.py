@@ -1,63 +1,181 @@
-"""Builds one run folder: wave sprites plus globe.json."""
+"""Builds one run folder: every globe sprite family plus globe.json."""
 from __future__ import annotations
 
 import json
 import shutil
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
+import numpy as np
+
+from .atmosphere import GUST_HOURS, cloud_from_layers, frame_a, frame_b, frame_t, rain_rate
 from .grid import GLOBE
-from .sources.openmeteo import OpenMeteoRun, RunIncomplete
+from .ocean import CURRENT_EVERY, CURRENT_FRAMES, ocean_frame, ocean_time, pack_ocean
+from .peaks import hourly, peak
+from .regrid import regrid
+from .sources.openmeteo import OpenMeteoRun, RunIncomplete, resolve_daily_run
 from .sprites import CHUNKS, COLS, EVERY, FRAMES, HOURS, chunk_frames, pack_chunk, save_sprite
+from .storms import frame_s, storm_index
 from .waves import frame_time, wave_frame, wave_peak
 
-WAVE_MODEL = "ncep_gfswave025"
-WAVE_VARIABLES = ("wave_height", "wave_period", "wave_direction")
+WAVE_VARS = ("wave_height", "wave_period", "wave_direction")
+GFS_VARS = ("wind_u_component_10m", "wind_v_component_10m", "temperature_2m")
+CLOUD_VARS = ("cloud_cover_low", "cloud_cover_mid", "cloud_cover_high")
+G25_VARS = ("cape", "lifted_index", "pressure_msl")
+IFS_LAG = timedelta(hours=6)
+PA_PER_HPA = 100.0  # IFS pressure is stored in Pa, GFS in hPa
+
+
+@dataclass
+class RunSources:
+    """One model run per input, already aligned to the globe run (spec §4)."""
+    wave: Any
+    gfs: Any
+    g25: Any
+    ifs: Any
+    cur: Any
+    sst: Any
+
+
+def open_sources(run: datetime, cache_dir: Path) -> RunSources:
+    def om(model, model_run):
+        return OpenMeteoRun(model, model_run, cache_dir, cache_run=run)
+    cur_run = resolve_daily_run("meteofrance_currents", run, cache_dir)
+    sst_run = resolve_daily_run("meteofrance_sea_surface_temperature", run, cache_dir)
+    return RunSources(wave=om("ncep_gfswave025", run), gfs=om("ncep_gfs013", run), g25=om("ncep_gfs025", run),
+                      ifs=om("ecmwf_ifs", run - IFS_LAG), cur=om("meteofrance_currents", cur_run),
+                      sst=om("meteofrance_sea_surface_temperature", sst_run))
 
 
 def _iso(t: datetime) -> str:
     return t.strftime("%Y-%m-%dT%H:%MZ")
 
 
-def _check_complete(source, run: datetime) -> None:
-    """Refuse to start unless every frame's inputs are published."""
-    meta = source.meta()
-    if not meta.get("completed"):
-        raise RunIncomplete(f"{WAVE_MODEL} run {_iso(run)} is still being published")
-    have_times, have_vars = set(meta.get("valid_times", [])), set(meta.get("variables", []))
-    missing = [v for v in WAVE_VARIABLES if v not in have_vars]
-    missing += [_iso(frame_time(run, j)) for j in range(FRAMES) if _iso(frame_time(run, j)) not in have_times]
+def _check_complete(s: RunSources, run: datetime) -> None:
+    """Refuse to start unless every required input is published (nothing is written otherwise)."""
+    missing: list[str] = []
+    frame_times = [frame_time(run, j) for j in range(FRAMES)]
+    ocean_times = [ocean_time(run, k) for k in range(CURRENT_FRAMES)]
+    needs = [
+        ("wave", s.wave, WAVE_VARS, frame_times),
+        ("gfs", s.gfs, GFS_VARS + CLOUD_VARS + ("precipitation",), frame_times),
+        ("gfs025", s.g25, G25_VARS, frame_times),
+        ("ifs", s.ifs, ("wind_gusts_10m",), [t for t in frame_times if t - run <= timedelta(hours=GUST_HOURS)]),
+        ("currents", s.cur, ("ocean_u_current", "ocean_v_current"), ocean_times),
+        ("sst", s.sst, ("sea_surface_temperature",), ocean_times),
+    ]
+    for name, src, variables, times in needs:
+        meta = src.meta()
+        if not meta.get("completed"):
+            missing.append(f"{name} run {_iso(src.run)} still being published")
+            continue
+        have_t, have_v = set(meta.get("valid_times", [])), set(meta.get("variables", []))
+        missing += [f"{name} {v}" for v in variables if v not in have_v]
+        missing += [f"{name} {_iso(t)}" for t in times if _iso(t) not in have_t]
     if missing:
-        raise RunIncomplete(f"{WAVE_MODEL} run {_iso(run)} is missing: {', '.join(missing[:5])}"
+        raise RunIncomplete(f"run {_iso(run)} is missing: {', '.join(missing[:5])}"
                             + (f" and {len(missing) - 5} more" if len(missing) > 5 else ""))
 
 
-def build_waves(run: datetime, cache_dir: Path, out_dir: Path, source=None) -> Path:
-    """Write out_dir/<YYYYMMDDHH>/ with globe-w0..6.webp and globe.json.
+class _GfsPrecip:
+    """Precipitation steps of the GFS run on the globe grid, for rain_rate()."""
+
+    def __init__(self, gfs):
+        self.gfs = gfs
+        self._times = sorted(datetime.strptime(v, "%Y-%m-%dT%H:%MZ").replace(tzinfo=gfs.run.tzinfo)
+                             for v in gfs.meta()["valid_times"])
+
+    def valid_times(self) -> list[datetime]:
+        return self._times
+
+    def field(self, t: datetime):
+        a = self.gfs.field_or_none("precipitation", t)
+        return None if a is None else regrid(a, self.gfs.source_grid, GLOBE)
+
+
+def _on_globe(src, variable: str, t: datetime) -> np.ndarray:
+    return regrid(src.field(variable, t), src.source_grid, GLOBE)
+
+
+def _atmosphere(s: RunSources, precip: _GfsPrecip, run: datetime, t: datetime) -> dict:
+    u, v, temp = (_on_globe(s.gfs, name, t) for name in GFS_VARS)
+    layers = [s.gfs.field_or_none(name, t) for name in CLOUD_VARS]
+    cloud = None if any(a is None for a in layers) else cloud_from_layers(
+        *(regrid(a, s.gfs.source_grid, GLOBE) for a in layers))
+    if s.ifs.has_time(t):
+        pressure = _on_globe(s.ifs, "pressure_msl", t) / PA_PER_HPA
+    else:  # past the IFS run's end: GFS 0.25° of run T fills in (spec §4)
+        pressure = _on_globe(s.g25, "pressure_msl", t)
+    gust = _on_globe(s.ifs, "wind_gusts_10m", t) if t - run <= timedelta(hours=GUST_HOURS) else None
+    return {"u": u, "v": v, "temp": temp, "cloud": cloud, "pressure": pressure, "gust": gust,
+            "rain": rain_rate(precip, t)}
+
+
+def build_run(run: datetime, cache_dir: Path, out_dir: Path, sources: RunSources | None = None) -> Path:
+    """Write out_dir/<YYYYMMDDHH>/ with globe-{a,b,t,s,w}0..6.webp, globe-c.webp and globe.json.
     Nothing is written unless the whole run is available; the folder appears only when complete."""
-    source = source or OpenMeteoRun(WAVE_MODEL, run, cache_dir)
-    _check_complete(source, run)
-    sg = source.source_grid
+    s = sources or open_sources(run, cache_dir)
+    _check_complete(s, run)
     final = Path(out_dir) / run.strftime("%Y%m%d%H")
     tmp = final.with_name(final.name + ".tmp")
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True)
     try:
-        frame_peaks = []
+        peaks: dict[str, list] = {k: [] for k in ("wind", "rain", "hot", "cold", "gust", "low", "wave")}
+        precip = _GfsPrecip(s.gfs)
         for chunk in range(len(CHUNKS)):
-            frames = []
+            sheets: dict[str, list] = {f: [] for f in "abtsw"}
             for j in chunk_frames(chunk):
                 t = frame_time(run, j)
-                height, period, direction = (source.field(v, t) for v in WAVE_VARIABLES)
-                frames.append(wave_frame(height, period, direction, sg))
-                frame_peaks.append(wave_peak(height, sg))
-            save_sprite(pack_chunk(frames), tmp / f"globe-w{chunk}.webp")
+                height, period, direction = (s.wave.field(v, t) for v in WAVE_VARS)
+                sheets["w"].append(wave_frame(height, period, direction, s.wave.source_grid))
+                peaks["wave"].append(wave_peak(height, s.wave.source_grid))
+                del height, period, direction
+                f = _atmosphere(s, precip, run, t)
+                sheets["a"].append(frame_a(f))
+                sheets["b"].append(frame_b(f))
+                sheets["t"].append(frame_t(f))
+                cape, lifted = (_on_globe(s.g25, name, t) for name in ("cape", "lifted_index"))
+                rain = f["rain"] if f["rain"] is not None else np.zeros((GLOBE.h, GLOBE.w), np.float32)
+                sheets["s"].append(frame_s(storm_index(cape, rain, lifted)))
+                peaks["wind"].append(peak(np.hypot(f["u"], f["v"])))
+                peaks["rain"].append(peak(rain))
+                peaks["hot"].append(peak(f["temp"]))
+                peaks["cold"].append(peak(f["temp"], mode="min"))
+                peaks["low"].append(peak(f["pressure"], mode="min"))
+                if f["gust"] is not None:
+                    peaks["gust"].append(peak(f["gust"]))
+            for fam, frames in sheets.items():
+                save_sprite(pack_chunk(frames), tmp / f"globe-{fam}{chunk}.webp")
+
+        ocean, sea_hot, current = [], [], []
+        for k in range(CURRENT_FRAMES):
+            t = ocean_time(run, k)
+            u, v = (s.cur.field(name, t) for name in ("ocean_u_current", "ocean_v_current"))
+            sst = s.sst.field("sea_surface_temperature", t)
+            ocean.append(ocean_frame(u, v, sst, s.cur.source_grid))
+            gu, gv = (regrid(a, s.cur.source_grid, GLOBE) for a in (u, v))
+            current.append(peak(np.hypot(gu, gv)))
+            sea_hot.append(peak(regrid(sst, s.sst.source_grid, GLOBE)))
+        save_sprite(pack_ocean(ocean), tmp / "globe-c.webp")
+
         manifest = {
             "run": _iso(run), **GLOBE.manifest_fields(),
             "every": EVERY, "hours": HOURS, "frames": FRAMES, "cols": COLS, "chunks": CHUNKS,
-            "waves": True,
-            "sources": {"wave": _iso(run)},
-            "peaks": {"wave": [frame_peaks[h // EVERY] for h in range(HOURS + 1)]},
+            "pressure": True, "gust": True, "waves": True, "gustHours": GUST_HOURS,
+            "currents": True, "currentEvery": CURRENT_EVERY, "storms": True, "currentFrames": CURRENT_FRAMES,
+            "sources": {"ecmwf": _iso(s.ifs.run), "wave": _iso(s.wave.run),
+                        "cur": _iso(s.cur.run), "sst": _iso(s.sst.run)},
+            "peaks": {
+                **{k: hourly(peaks[k], EVERY, HOURS) for k in ("wind", "rain", "hot", "cold")},
+                "gust": hourly(peaks["gust"], EVERY, GUST_HOURS),
+                "low": hourly(peaks["low"], EVERY, HOURS),
+                "wave": hourly(peaks["wave"], EVERY, HOURS),
+                "sea_hot": hourly(sea_hot, CURRENT_EVERY, HOURS),
+                "current": hourly(current, CURRENT_EVERY, HOURS),
+            },
         }
         (tmp / "globe.json").write_text(json.dumps(manifest, separators=(",", ":")))
     except BaseException:

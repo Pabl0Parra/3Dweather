@@ -10,7 +10,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .build import build_waves, write_latest
+from .build import build_run, write_latest
 from .sources.openmeteo import RunIncomplete
 from .static_assets import build_static
 
@@ -25,7 +25,7 @@ def _run_time(text: str) -> datetime:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="pipeline")
     sub = parser.add_subparsers(dest="command", required=True)
-    build = sub.add_parser("build", help="build the wave sprites and manifest for one model run")
+    build = sub.add_parser("build", help="build every globe sprite and the manifest for one model run")
     build.add_argument("--run", required=True, type=_run_time, help="model run time, YYYYMMDDHH (UTC)")
     build.add_argument("--cache", required=True, type=Path, help="folder for downloaded inputs")
     build.add_argument("--out", required=True, type=Path, help="folder to write the run into")
@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
         print(args.out)
         return 0
     try:
-        out = build_waves(args.run, args.cache, args.out)
+        out = build_run(args.run, args.cache, args.out)
     except RunIncomplete as exc:
         print(f"not built: {exc}", file=sys.stderr)
         return 2
