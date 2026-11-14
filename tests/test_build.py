@@ -103,3 +103,12 @@ def test_swap_failure_restores_the_existing_run(tmp_path, monkeypatch):
         build_waves(RUN, tmp_path / "cache", tmp_path / "out", source=FakeSource())
     assert (out / "marker").read_text() == "old" and (out / "globe-w0.webp").exists()
     assert [p.name for p in (tmp_path / "out").iterdir()] == ["2026111306"]
+
+
+def test_write_latest(tmp_path):
+    from pipeline.build import write_latest
+    write_latest(tmp_path, datetime(2026, 11, 13, 6, tzinfo=timezone.utc),
+                 datetime(2026, 11, 14, 9, 30, tzinfo=timezone.utc))
+    assert json.loads((tmp_path / "latest.json").read_text()) == {
+        "run": "2026-11-13T06:00Z", "dir": "2026111306", "built": "2026-11-14T09:30:00Z"}
+    assert not (tmp_path / "latest.json.part").exists()

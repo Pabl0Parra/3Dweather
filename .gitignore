@@ -26,3 +26,12 @@ dist/
 data/
 _tmp/
 *.egg-info/
+
+# Web build and generated data
+web/node_modules/
+web/dist/
+web/.astro/
+web/public/wx/
+web/public/assets/globe/
+web/test-results/
+web/playwright-report/
