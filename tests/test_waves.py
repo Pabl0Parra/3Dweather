@@ -37,10 +37,16 @@ def test_all_land_cell_encodes_as_empty():
     assert (f[..., 0] == 0).all() and (f[..., 1] == 128).all() and (f[..., 2] == 128).all()
 
 
-def test_wave_peak_snaps_to_globe_cell():
-    h = np.zeros((721, 1440), np.float32)
-    h[537, 156] = 13.88  # 44.25 N, 141.0 W
-    assert wave_peak(h, SG) == [13.9, 44.28, -140.92]
+def test_wave_peak_is_the_maximum_of_the_regridded_field():
+    # Measured against all 57 reference frames: the published peak is the highest
+    # globe cell after bilinear regridding, not the native grid's maximum.
+    h = np.full((721, 1440), 10.0, np.float32)
+    h[537, 156] = 14.0  # 44.25 N, 141.0 W: one native cell, diluted to 12.34 m at the globe cell
+    assert wave_peak(h, SG) == [12.3, 44.28, -140.92]
+
+
+def test_wave_peak_of_all_land_is_zero():
+    assert wave_peak(np.full((721, 1440), np.nan, np.float32), SG) == [0.0, 0.0, 0.0]
 
 
 def test_frame_time_steps_three_hours():

@@ -295,6 +295,22 @@ These cannot be matched from outside; each is our own rule, documented as such.
   the first 21 hours. For later hours or other cases, capture a fresh pair at
   any time: the bucket holds the last 7 days and the reference site the last
   2 days of runs.
+- **Phase 1 results (2026-11-14, wave layer).** Built from the saved inputs
+  and compared with the captured reference sprite, frames 0-7 (hours 0-21):
+  - Open-sea cells (65 % of the grid): 99.95 % identical bytes in wave height
+    and 99.94-99.95 % in each vector channel; mean byte difference below 0.001.
+  - Hourly peaks: all 169 entries identical in height and position.
+  - Grid and frame fields of the manifest: identical.
+  - Rules this confirmed: bilinear regridding that skips missing cells, then
+    rounding; vector = travel direction with length period ÷ 25; a peak is the
+    highest globe cell of the regridded field (not the native grid's maximum,
+    which matched only 60 % of frames).
+  - Not matched: cells on land and along the coast. Counting every cell, 81 %
+    of bytes are identical. The reference extends sea values into land by a
+    rule we have not identified; ours spreads them 4 cells. The globe's land
+    mask hides most of this, so it is left for the globe phase to judge by eye.
+  - GFS has no cloud cover or rain at the analysis hour (hour 0), which
+    explains the empty cloud channel in the reference's first frame.
 - **Tide test.** New York City, November 2026: our high and low waters against
   the captured station data, within 2 minutes and 2 cm. The reference site's
   own FES-vs-NOAA comparison gives the expected error for FES stations.

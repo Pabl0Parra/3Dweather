@@ -25,7 +25,7 @@ Rules measured against the captured reference frame on 2026-11-14 (they are fact
 - Regridding is bilinear on the native grid, ignoring missing cells, then rounded to the nearest byte: 99.8 % of sea cells match the reference byte exactly. Nearest-cell sampling matches only 73 %.
 - Wave vector = direction the waves travel **toward** (`wave_direction + 180°`), x = east, y = north, length = `wave_period / 25`. Median direction error against the reference: 0.44°.
 - Open-Meteo grids are stored south to north, west to east: GFS-Wave is `(721, 1440)`, `lat0=-90`, `lon0=-180`, step `0.25`. Land is `NaN`.
-- Peaks: for hour `h`, use frame `h // 3`; the value is the maximum of the **native** grid, positioned at the nearest globe cell centre (reference hour 0: `[13.9, 44.28, -140.92]`).
+- Peaks: for hour `h`, use frame `h // 3`; the value is the highest globe cell of the **regridded** field (reference hour 0: `[13.9, 44.28, -140.92]`). *Corrected during Task 8: the plan first said "maximum of the native grid", which matched only 60 % of reference frames; the regridded maximum matches all 57. Tasks 6 and 8 below still show the original test text; the code and tests in the repository follow this corrected rule.*
 
 ## Review Focus
 

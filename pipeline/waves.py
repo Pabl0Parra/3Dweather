@@ -54,10 +54,11 @@ def wave_frame(height: np.ndarray, period: np.ndarray, direction: np.ndarray,
 
 
 def wave_peak(height_native: np.ndarray, sg: SourceGrid) -> list[float]:
-    """[metres, lat, lon]: the native grid's maximum, placed at the nearest globe cell centre."""
-    if not np.isfinite(height_native).any():
+    """[metres, lat, lon] of the highest globe cell after regridding (before byte
+    rounding and land fill). This reproduces the reference peaks exactly."""
+    on_globe = regrid_bilinear(height_native, sg, GLOBE)
+    if not np.isfinite(on_globe).any():
         return [0.0, 0.0, 0.0]
-    row, col = np.unravel_index(np.nanargmax(height_native), height_native.shape)
-    y, x = GLOBE.cell_of(sg.lat0 + row * sg.dlat, sg.lon0 + col * sg.dlon)
-    return [round(float(height_native[row, col]), 1),
+    y, x = np.unravel_index(np.nanargmax(on_globe), on_globe.shape)
+    return [round(float(on_globe[y, x]), 1),
             round(float(GLOBE.lats()[y]), 2), round(float(GLOBE.lons()[x]), 2)]

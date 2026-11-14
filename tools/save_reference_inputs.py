@@ -107,8 +107,13 @@ def save_subset(fs, model: str, run_dir: str, t: datetime, names: list[str], out
     fetch(f"{HTTP}/data_spatial/{model}/{run_dir}/{stamp(t)}.om", local)
     reader = omfiles.OmFileReader(str(local))
     try:
+        absent = []
         for name in todo:
-            var = reader.get_child_by_name(name)
+            try:
+                var = reader.get_child_by_name(name)
+            except ValueError:  # e.g. GFS has no cloud cover or rain at the analysis hour
+                absent.append(name)
+                continue
             scale = float(var.scale_factor)
             data, kind = pack(var[:], scale)
             dest = out / model / name / f"{stamp(t)}.npz"
@@ -126,7 +131,12 @@ def save_subset(fs, model: str, run_dir: str, t: datetime, names: list[str], out
             local.unlink(missing_ok=True)
         except PermissionError:
             pass  # removed with the rest of _tmp at the end of the run
-    return f"ok   {model} {stamp(t)} {','.join(todo)}"
+    if absent:
+        note = out / model / "absent.txt"
+        with open(note, "a") as f:
+            f.write(f"{stamp(t)}: {', '.join(absent)}\n")
+    return f"ok   {model} {stamp(t)} {','.join(n for n in todo if n not in absent)}" + (
+        f" (not in file: {','.join(absent)})" if absent else "")
 
 
 def save_whole(model: str, run_dir: str, name: str, out: Path) -> str:
