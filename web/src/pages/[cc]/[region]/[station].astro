@@ -1,0 +1,92 @@
+---
+// One page per catalogue station: /{cc}/{region}/{station}. Tides, sky and weather sections arrive in phase 9.
+import "../../../styles/globe.css";
+import "../../../styles/station.css";
+import SearchBox from "../../../components/SearchBox.astro";
+import { loadStations, makeIndex, nearbyStations, regionFor, type StationRecord } from "../../../stations/catalogue";
+
+export function getStaticPaths() {
+  const all = loadStations();
+  const idx = makeIndex(all);
+  return all.map((s) => ({
+    params: { cc: s.country_code.toLowerCase(), region: s.region_slug, station: s.slug },
+    props: { s, near: nearbyStations(idx, s, 8), map: regionFor(s) },
+  }));
+}
+
+interface Props {
+  s: StationRecord;
+  near: (StationRecord & { km: number })[];
+  map: ReturnType<typeof regionFor>;
+}
+const { s, near, map } = Astro.props;
+const countries = new Intl.DisplayNames(["en"], { type: "region" });
+const country = (cc: string) => { try { return countries.of(cc) ?? cc; } catch { return cc; } };
+const deg = (v: number, pos: string, neg: string) => `${Math.abs(v).toFixed(4)}° ${v >= 0 ? pos : neg}`;
+const where = s.region_name === country(s.country_code) ? s.region_name : `${s.region_name}, ${country(s.country_code)}`;
+const kind = s.type === "gauge" ? `NOAA tide gauge ${s.id.replace(/^n/, "")}` : "Coastal place";
+const globe = `/wave-map#${s.latitude.toFixed(2)},${s.longitude.toFixed(2)},6.0`;
+const distance = (k: number) => (k < 10 ? `${k.toFixed(1)} km` : `${Math.round(k)} km`);
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{s.name} tide times and weather · 3Dweather</title>
+    <meta name="description" content={`Tide times, sun, moon and weather for ${s.name}, ${where}.`} />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/wave-map">3Dweather</a>
+      <nav class="layer-tabs" aria-label="Maps">
+        <a href={globe}>Globe</a>
+        {map && <a href={`/weather-map/${map.slug}`}>Regional</a>}
+      </nav>
+      <div class="header-tools"><SearchBox /></div>
+    </header>
+    <main class="station-page" data-station={s.id}>
+      <nav class="st-crumbs" aria-label="Breadcrumb">
+        <span>{country(s.country_code)}</span> / <span>{s.region_name}</span>
+      </nav>
+      <h1>{s.name}</h1>
+      <p class="st-lede">{kind} in {where}.</p>
+
+      <dl class="st-facts">
+        <div><dt>Position</dt><dd>{deg(s.latitude, "N", "S")}, {deg(s.longitude, "E", "W")}</dd></div>
+        <div><dt>Local time</dt><dd>{s.timezone}</dd></div>
+        {s.county && <div><dt>County</dt><dd>{s.county}</dd></div>}
+        {s.reference_station && (
+          <div><dt>Tides from</dt><dd><a href={`/${s.reference_station.path}`}>{s.reference_station.name}</a> (NOAA)</dd></div>
+        )}
+      </dl>
+
+      <section class="st-soon">
+        <h2>Tide times</h2>
+        <p>The tide table for {s.name} is on its way. Until then, the <a href={`/tide-map#${s.latitude.toFixed(2)},${s.longitude.toFixed(2)},6.0`}>tide globe</a> shows the tide here hour by hour.</p>
+      </section>
+
+      <section>
+        <h2>Maps</h2>
+        <ul class="st-links">
+          <li><a href={globe}>Waves on the globe</a></li>
+          <li><a href={`/weather-map#${s.latitude.toFixed(2)},${s.longitude.toFixed(2)},6.0`}>Rain and clouds on the globe</a></li>
+          {map && <li><a href={`/weather-map/${map.slug}`}>{map.title} weather map</a></li>}
+        </ul>
+      </section>
+
+      {near.length > 0 && (
+        <section>
+          <h2>Nearby</h2>
+          <ul class="st-near">
+            {near.map((n) => (
+              <li><a href={`/${n.path}`}>{n.name}</a> <span>{distance(n.km)}{n.type === "gauge" ? " · tide gauge" : ""}</span></li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <p class="credits">Places: <a href="https://www.geonames.org/">GeoNames</a> (CC BY 4.0) · Tide stations: NOAA CO-OPS (public domain; not NOAA's official predictions)</p>
+    </main>
+  </body>
+</html>

@@ -38,3 +38,8 @@ web/playwright-report/
 
 # EOT20 tide atlas download (CC BY 4.0, 2 GB; fetched by the tide atlas tool)
 eot20/
+
+# Station catalogue inputs (NOAA, GeoNames, Natural Earth) and output
+catalogue-inputs/
+catalogue-out/
+web/public/catalogue/

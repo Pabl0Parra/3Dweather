@@ -1,6 +1,7 @@
 ---
 // One flat regional map page; `layer` picks the opening layer (/weather-map/{region} rain, /wind-map/{region} wind).
 import "../styles/globe.css";
+import SearchBox from "./SearchBox.astro";
 import "../styles/region.css";
 import { REGIONS, type RegionInfo } from "../region/regions";
 
@@ -27,6 +28,7 @@ const base = layer === "wind" ? "/wind-map" : "/weather-map";
         <a href={`/weather-map/${region.slug}`} aria-current="page">Regional</a>
       </nav>
       <div class="header-tools">
+        <SearchBox />
         <button type="button" class="units-button" id="units-button">Units</button>
       </div>
     </header>

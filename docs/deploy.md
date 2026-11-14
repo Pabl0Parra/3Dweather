@@ -56,7 +56,10 @@ Repository → **Settings** → **Secrets and variables** → **Actions** →
    mask, the coastline, one outline per regional map (`regions/{region}.json`)
    and the tide atlas (`tide.json` and the `tide-<hash>.png` it names) to
    `assets/globe/`. The first run downloads EOT20 (2.3 GB, cached afterwards)
-   and takes about 15 minutes.
+   and takes about 15 minutes. It also builds the station catalogue from the NOAA
+   CO-OPS station list and GeoNames (`stations.json`, `search.json`,
+   `countries.json`) and uploads it to `catalogue/`. Run it again when you want
+   a fresh catalogue, then run **Site**.
 2. **Actions** → **Forecast run** → **Run workflow** (leave the run empty).
    It builds the run that is due now and uploads it to `wx/<run>/`, then
    `wx/latest.json`. Each run folder also holds the 12 regional maps
@@ -69,11 +72,44 @@ Repository → **Settings** → **Secrets and variables** → **Actions** →
    exits within a minute. Runs older than 3 days are deleted.
 
 Check it worked: `https://pub-….r2.dev/wx/latest.json` should name the run.
+4. **Actions** → **Site** → **Run workflow** (it also runs on every push to
+   `main`). It downloads `catalogue/stations.json` from the bucket, builds the
+   site with one page per station (about 24,500 pages, about a minute) and
+   uploads it to the root of the bucket. Only files whose content changed go up;
+   `site-manifest.json` in the bucket remembers what was published, so pages
+   that leave the catalogue are deleted. It never touches `wx/`, `assets/` or
+   `catalogue/`. The first upload sends every page and takes several minutes.
+   Site also runs by itself after each successful Static assets run, so a new
+   catalogue gets its pages at once. Two safety stops: if the catalogue cannot
+   be downloaded the job fails instead of publishing a site without station
+   pages, and a publish that would delete more than 10 % of the site stops
+   (run `python -m pipeline publish-site --allow-mass-delete` by hand if that
+   is really intended). Replaced `_astro/` scripts stay two days, so pages
+   cached before a deploy keep working.
 
-## 5. Point the site at the bucket
+Check it: `https://pub-….r2.dev/us/new-york/new-york-city` should show the New
+York City page.
 
-Build the site with the bucket's address (for example in the hosting provider's
-build settings, or a local `web/.env` file, which is git-ignored):
+## 5. Where the site is served
+
+Pages, `wx/`, `assets/` and `catalogue/` all live in the same bucket, so the
+site reads its data from its own address (the Site workflow builds with
+`PUBLIC_WX_BASE=/wx`, `PUBLIC_ASSET_BASE=/assets/globe` and
+`PUBLIC_CATALOGUE_BASE=/catalogue`). Cloudflare Pages was ruled out: its free
+plan stops at 20,000 files and the site has about 24,500 pages.
+
+Every page is stored without `.html` (`us/new-york/new-york-city`, `wave-map`)
+with an HTML content type, so clean URLs work with no routing rule. The one
+exception is the bare domain: R2 has no index document, so `/` needs one rule
+once a custom domain is connected (**Rules** → **Transform Rules** → **Rewrite
+URL**: when the path equals `/`, rewrite the path to `/index.html`). On the
+`r2.dev` address, open a page such as `/wave-map` instead.
+
+## 6. Building the site somewhere else
+
+To serve the site from another host, build it with the bucket's address (for
+example in that host's build settings, or a local `web/.env` file, which is
+git-ignored), and add that host to the CORS policy:
 
 ```
 PUBLIC_WX_BASE=https://pub-….r2.dev/wx
@@ -90,6 +126,9 @@ web/public/assets/globe`, `python -m pipeline tide-atlas --eot20 eot20/eot20.zip
 
 | Key | Cache-Control |
 |---|---|
+| pages (`us/…`, `wave-map`, …) | `public, max-age=3600` |
+| `_astro/*` | `public, max-age=31536000, immutable` |
+| `catalogue/*` | `public, max-age=86400` |
 | `wx/latest.json` | `public, max-age=60` |
 | `wx/<YYYYMMDDHH>/*` | `public, max-age=2592000, immutable` |
 | `assets/globe/*` | `public, max-age=604800` |

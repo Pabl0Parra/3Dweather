@@ -1,6 +1,7 @@
 ---
 // One globe page; each page file only names its layer.
 import "../styles/globe.css";
+import SearchBox from "./SearchBox.astro";
 import "../styles/splash.css";
 import { LAYER_IDS, LAYERS, type LayerId } from "../globe/layers";
 
@@ -34,6 +35,7 @@ const l = LAYERS[layer];
         ))}
       </nav>
       <div class="header-tools">
+        <SearchBox />
         <button type="button" class="units-button" id="units-button">Units</button>
       </div>
     </header>

@@ -1,0 +1,15 @@
+/* Station pages; header and search come from globe.css. */
+.station-page { max-width: 820px; margin: 0 auto; padding: 0 16px 48px; }
+.station-page h1 { font-size: clamp(24px, 5vw, 34px); margin: 8px 0 6px; line-height: 1.2; overflow-wrap: anywhere; }
+.station-page h2 { font-size: 20px; margin: 28px 0 8px; }
+.station-page p { line-height: 1.55; }
+.station-page a { color: var(--cyan); }
+.st-crumbs { margin-top: 14px; font-size: 13px; color: var(--dim); }
+.st-lede { color: var(--dim); margin: 0 0 16px; }
+.st-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 0; }
+.st-facts div { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #060d1a; }
+.st-facts dt { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
+.st-facts dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.st-links, .st-near { padding-left: 18px; line-height: 1.8; }
+.st-near span { color: var(--dim); font-size: 13px; }
+.st-soon { border: 1px dashed var(--line); border-radius: 10px; padding: 4px 16px 8px; margin-top: 24px; }

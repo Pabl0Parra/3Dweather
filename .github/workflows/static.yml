@@ -1,6 +1,8 @@
 # Builds the static globe assets and uploads them to R2 under assets/globe/:
 # the land mask and coastline from Natural Earth, and the tide atlas from EOT20
-# (DGFI-TUM, CC BY 4.0, via SEANOE). Run by hand when the art or the atlas changes.
+# (DGFI-TUM, CC BY 4.0, via SEANOE). Also builds the station catalogue (NOAA CO-OPS
+# stations and GeoNames coastal places, CC BY 4.0) into catalogue/. Run by hand when
+# the art, the atlas or the catalogue changes; then run Site to rebuild the pages.
 name: Static assets
 
 on:
@@ -41,3 +43,5 @@ jobs:
       - run: python -m pipeline static --cache "$RUNNER_TEMP/cache" --out "$RUNNER_TEMP/static"
       - run: python -m pipeline tide-atlas --eot20 eot20/eot20.zip --out "$RUNNER_TEMP/static"
       - run: python -m pipeline upload --src "$RUNNER_TEMP/static" --prefix assets/globe --max-age 604800 --store r2
+      - run: python -m pipeline catalogue --inputs "$RUNNER_TEMP/catalogue-inputs" --out "$RUNNER_TEMP/catalogue"
+      - run: python -m pipeline upload --src "$RUNNER_TEMP/catalogue" --prefix catalogue --max-age 86400 --store r2

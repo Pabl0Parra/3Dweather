@@ -5,6 +5,9 @@ python -m pipeline static --cache DIR --out DIR
 python -m pipeline cycle --cache DIR --out DIR --store (r2|dir:PATH) [--run YYYYMMDDHH]
 python -m pipeline upload --src DIR --prefix KEY --max-age SECONDS --store (r2|dir:PATH)
 python -m pipeline tide-atlas --eot20 ZIP_OR_DIR --out DIR
+python -m pipeline catalogue --inputs DIR --out DIR
+python -m pipeline publish-site --dist DIR --store (r2|dir:PATH)
+python -m pipeline get --key KEY --out FILE --store (r2|dir:PATH)
 """
 from __future__ import annotations
 
@@ -53,7 +56,42 @@ def main(argv: list[str] | None = None) -> int:
     tide = sub.add_parser("tide-atlas", help="build tide.png and tide.json from EOT20")
     tide.add_argument("--eot20", required=True, type=Path, help="the downloaded EOT20 zip, or a folder of *_ocean_eot20.nc")
     tide.add_argument("--out", required=True, type=Path)
+    cat = sub.add_parser("catalogue", help="build stations.json, search.json and countries.json")
+    cat.add_argument("--inputs", required=True, type=Path, help="folder for the NOAA, GeoNames and coastline inputs")
+    cat.add_argument("--out", required=True, type=Path)
+    site = sub.add_parser("publish-site", help="upload the built web site to the bucket root (changed files only)")
+    site.add_argument("--dist", required=True, type=Path)
+    site.add_argument("--store", required=True)
+    site.add_argument("--allow-mass-delete", action="store_true",
+                      help="allow deleting more than 10%% of the published site (normally a sign of a broken build)")
+    get = sub.add_parser("get", help="download one key from the store (exit 3 when it does not exist)")
+    get.add_argument("--key", required=True)
+    get.add_argument("--out", required=True, type=Path)
+    get.add_argument("--store", required=True)
     args = parser.parse_args(argv)
+
+    if args.command == "publish-site":
+        from .site import publish_site
+        r = publish_site(store_from_arg(args.store), args.dist, allow_mass_delete=args.allow_mass_delete)
+        print(f"uploaded {r['uploaded']}, unchanged {r['unchanged']}, deleted {r['deleted']}")
+        return 0
+    if args.command == "get":
+        data = store_from_arg(args.store).get_bytes(args.key)
+        if data is None:
+            print(f"{args.key}: not in the store", file=sys.stderr)
+            return 3
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_bytes(data)
+        print(args.out)
+        return 0
+
+    if args.command == "catalogue":
+        from .catalogue import build_catalogue, fetch_inputs, write_catalogue
+        records = build_catalogue(args.inputs, fetch_inputs(args.inputs))
+        write_catalogue(records, args.inputs, args.out)
+        gauges = sum(r["type"] == "gauge" for r in records)
+        print(f"{len(records)} stations ({gauges} gauges) in {len({r['country_code'] for r in records})} countries -> {args.out}")
+        return 0
 
     if args.command == "tide-atlas":
         from .tide_atlas import build_tide_atlas
