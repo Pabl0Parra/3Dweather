@@ -53,7 +53,9 @@ Repository → **Settings** → **Secrets and variables** → **Actions** →
 ## 4. First runs
 
 1. **Actions** → **Static assets** → **Run workflow**. This uploads the land
-   mask and coastline to `assets/globe/` (about a minute).
+   mask, the coastline and the tide atlas (`tide.png`, `tide.json`) to
+   `assets/globe/`. The first run downloads EOT20 (2.3 GB, cached afterwards)
+   and takes about 15 minutes.
 2. **Actions** → **Forecast run** → **Run workflow** (leave the run empty).
    It builds the run that is due now and uploads it to `wx/<run>/`, then
    `wx/latest.json`. Expect 20–40 minutes. If the inputs are not all published
@@ -78,7 +80,8 @@ PUBLIC_ASSET_BASE=https://pub-….r2.dev/assets/globe
 Without them the site reads `/wx` and `/assets/globe` from its own folder,
 which is how local development works (`python -m pipeline build … --out
 web/public/wx --latest`, `python -m pipeline static … --out
-web/public/assets/globe`).
+web/public/assets/globe`, `python -m pipeline tide-atlas --eot20 eot20/eot20.zip
+--out web/public/assets/globe`).
 
 ## Files and cache lifetimes
 

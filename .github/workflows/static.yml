@@ -1,5 +1,6 @@
-# Builds the static globe assets (land mask, coastline) from Natural Earth and
-# uploads them to R2 under assets/globe/. Run by hand when the art changes.
+# Builds the static globe assets and uploads them to R2 under assets/globe/:
+# the land mask and coastline from Natural Earth, and the tide atlas from EOT20
+# (DGFI-TUM, CC BY 4.0, via SEANOE). Run by hand when the art or the atlas changes.
 name: Static assets
 
 on:
@@ -11,18 +12,32 @@ permissions:
 jobs:
   upload:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      EOT20_URL: https://www.seanoe.org/data/00683/79489/data/85762.zip
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
-      - run: python -m pip install -e ".[publish]"
+      - run: python -m pip install -e ".[publish,tides]"
+      # EOT20 is 2.3 GB and never changes: keep it between runs.
+      - uses: actions/cache@v4
+        with:
+          path: eot20
+          key: eot20-85762
+      - name: Download EOT20
+        run: |
+          if [ ! -s eot20/eot20.zip ]; then
+            mkdir -p eot20
+            curl -fL --retry 3 -o eot20/eot20.zip.part "$EOT20_URL"
+            mv eot20/eot20.zip.part eot20/eot20.zip
+          fi
       - run: python -m pipeline static --cache "$RUNNER_TEMP/cache" --out "$RUNNER_TEMP/static"
+      - run: python -m pipeline tide-atlas --eot20 eot20/eot20.zip --out "$RUNNER_TEMP/static"
       - run: python -m pipeline upload --src "$RUNNER_TEMP/static" --prefix assets/globe --max-age 604800 --store r2

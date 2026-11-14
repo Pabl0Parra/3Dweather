@@ -70,10 +70,47 @@ export function tideAt(a: TideAtlas, lat: number, lon: number, t: Date): { heigh
   const y = Math.max(0, Math.min(a.h - 1, Math.round((a.north - lat) / a.dlat)));
   const maskTile = Math.floor(MASK_CHANNEL / 3), maskComp = MASK_CHANNEL % 3;
   if (a.pixels[((maskTile * a.h + y) * a.w + x) * 4 + maskComp] < 128) return null;
-  const xy = sampleAtlas(a, lat, lon, Array.from({ length: 2 * a.cons.length }, (_, i) => i));
+  // Sea-weighted bilinear: land cells hold X = Y = 0 and would pull coastal heights toward 0.
+  const chans = Array.from({ length: 2 * a.cons.length }, (_, i) => i);
+  const sum = new Array(chans.length).fill(0);
+  let fx = (lon - a.west) / a.dlon;
+  fx = ((fx % a.w) + a.w) % a.w;
+  const fy = Math.max(0, Math.min(a.h - 1, (a.north - lat) / a.dlat));
+  const x0 = Math.floor(fx), y0 = Math.floor(fy);
+  const tx = fx - x0, ty = fy - y0;
+  let seaW = 0;
+  for (const [cx, cy, wt] of [[x0, y0, (1 - tx) * (1 - ty)], [x0 + 1, y0, tx * (1 - ty)], [x0, y0 + 1, (1 - tx) * ty], [x0 + 1, y0 + 1, tx * ty]]) {
+    const xx = cx % a.w, yy = Math.min(cy, a.h - 1);
+    if (a.pixels[((maskTile * a.h + yy) * a.w + xx) * 4 + maskComp] < 128) continue;
+    seaW += wt;
+    chans.forEach((ch, i) => { sum[i] += wt * (a.pixels[((Math.floor(ch / 3) * a.h + yy) * a.w + xx) * 4 + (ch % 3)] - 128); });
+  }
+  const xy = sum.map((v) => v / seaW + 128);
   const now = heightWith(a, xy, phasesAt(a, t));
   const later = heightWith(a, xy, phasesAt(a, new Date(t.getTime() + 600_000)));
   return { heightM: now, rising: later > now };
+}
+
+/** The sea cell with the highest tide at time t (cell centres, no interpolation). */
+export function highestTide(a: TideAtlas, t: Date): { lat: number; lon: number; heightM: number } | null {
+  const p = phasesAt(a, t);
+  const n = a.cons.length, plane = a.w * a.h;
+  const maskBase = Math.floor(MASK_CHANNEL / 3) * plane * 4 + (MASK_CHANNEL % 3);
+  let best = -Infinity, bi = -1;
+  for (let i = 0; i < plane; i++) {
+    if (a.pixels[maskBase + i * 4] < 128) continue;
+    let h = 0;
+    for (let k = 0; k < n; k++) {
+      const cx = 2 * k, cy = cx + 1;
+      const x = a.pixels[Math.floor(cx / 3) * plane * 4 + i * 4 + (cx % 3)];
+      const y = a.pixels[Math.floor(cy / 3) * plane * 4 + i * 4 + (cy % 3)];
+      h += ((x - 128) / 127) * p.c[k] + ((y - 128) / 127) * p.s[k];
+    }
+    if (h > best) { best = h; bi = i; }
+  }
+  if (bi < 0) return null;
+  const x = bi % a.w, y = Math.floor(bi / a.w);
+  return { lat: a.north - y * a.dlat, lon: a.west + x * a.dlon, heightM: best };
 }
 
 /** Browser: load tide.json and decode tide.png without colour conversion. */

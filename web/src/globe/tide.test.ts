@@ -85,3 +85,25 @@ test("rising compares with ten minutes later", () => {
   expect(tideAt(a, 22.5, 22.5, at(0.5))!.rising).toBe(false);
   expect(tideAt(a, 22.5, 22.5, at(11))!.rising).toBe(true);
 });
+
+test("next to land the height comes from the sea cells only, not pulled toward zero", () => {
+  const a = atlas(0, { landAt: [3, 1] });
+  const { w, h } = a;
+  a.pixels[((0 * h + 1) * w + 3) * 4 + 0] = 128; // land cells store X = Y = 0
+  a.pixels[((0 * h + 1) * w + 3) * 4 + 1] = 128;
+  // lon -55 sits 28 % of the way from the sea cell (x=2, lon -67.5) to the land cell (x=3)
+  near(tideAt(a, 22.5, -55, at(0))!.heightM, 2, 0.03);
+});
+
+import { highestTide } from "./tide";
+
+test("highest tide now: the sea cell with the greatest height", () => {
+  const a = atlas(Math.PI / 2); // at t = 0 every cell reads 0 m ...
+  // ... except one whose X byte is raised to the top: X byte 255 at x=2, y=2 (lon -67.5, lat -22.5)
+  const w = a.w, h = a.h;
+  a.pixels[((0 * h + 2) * w + 2) * 4 + 0] = 255;
+  const top = highestTide(a, at(0))!;
+  expect(top.lat).toBeCloseTo(-22.5, 6);
+  expect(top.lon).toBeCloseTo(-67.5, 6);
+  expect(top.heightM).toBeGreaterThan(1.99);
+});

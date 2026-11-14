@@ -14,6 +14,7 @@ import { mountLegend } from "./ui";
 import { loadUnits, mountUnitsMenu, type Units } from "./units";
 import { loadLatest, loadManifest, type GlobeManifest, type Latest } from "./manifest";
 import { GlobeRenderer } from "./renderer";
+import { highestTide, loadTideAtlas, phasesAt, tideAt, type TideAtlas } from "./tide";
 import { clampView, project, radiusPx, unproject, type View } from "./view";
 
 export type GlobeHandle = {
@@ -126,6 +127,19 @@ export async function initGlobe(
   // CPU copies for particles, the probe and the peak search.
   let frames: Frames | null = null;
   let land: LandGrid | null = null;
+  // Tide atlas: loaded the first time the tide layer is shown, then kept.
+  let tide: TideAtlas | null = null;
+  let tideLoad: Promise<TideAtlas> | null = null;
+  const isTide = () => layer.shade.kind === "tide";
+  const timeAt = (h: number) => new Date(Date.parse(latest!.run) + h * 3.6e6);
+  function ensureTide(): Promise<TideAtlas> {
+    tideLoad ??= withRetry(() => loadTideAtlas(ASSET_BASE), showNotice).then((a) => {
+      tide = a;
+      renderer.setTideAtlas(a);
+      return a;
+    });
+    return tideLoad;
+  }
   const unitListeners: ((u: Units) => void)[] = [];
   let units: Units = opts.unitsButton
     ? mountUnitsMenu(opts.unitsButton, (u) => { units = u; unitListeners.forEach((f) => f(u)); })
@@ -179,7 +193,14 @@ export async function initGlobe(
     if (!at) return;
     const { lat, lon } = at;
     let lines: string[];
-    if (!layer.overLand && land?.isLand(lat, lon)) lines = readoutFor(layer, null, lat, lon, units);
+    if (isTide()) {
+      // The atlas's own 0.5° sea mask decides (the CPU land grid is too coarse for bays);
+      // the land grid only picks the wording where the atlas has no sea.
+      const t = tide && latest ? tideAt(tide, lat, lon, timeAt(hour)) : undefined;
+      if (t === undefined) lines = ["Tide still loading…", formatCoord(lat, lon)];
+      else if (t) lines = readoutFor(layer, { tideM: t.heightM, tideRising: t.rising }, lat, lon, units);
+      else lines = readoutFor(layer, land?.isLand(lat, lon) ? null : {}, lat, lon, units);
+    } else if (!layer.overLand && land?.isLand(lat, lon)) lines = readoutFor(layer, null, lat, lon, units);
     else if (!frames || !manifest) lines = ["Forecast still loading…", formatCoord(lat, lon)];
     else lines = readoutFor(layer, sampleLayer(layer, frames, manifest, lat, lon, hour), lat, lon, units);
     probe.show(lat, lon, lines);
@@ -206,6 +227,11 @@ export async function initGlobe(
   }
   root.addEventListener("pointerdown", () => { cancelAnimationFrame(flight); flight = 0; });
   opts.biggestButton?.addEventListener("click", () => {
+    if (isTide()) {
+      const top = tide && latest ? highestTide(tide, timeAt(hour)) : null;
+      if (top) flyTo({ lat0: top.lat, lon0: top.lon, zoom: FLY_ZOOM }, () => probeAt(top.lat, top.lon));
+      return;
+    }
     if (!frames || !manifest || !land) return;
     // Waves: scan the frame on show; other layers: the pipeline's hourly peak series.
     const w = frames.w;
@@ -250,7 +276,7 @@ export async function initGlobe(
   };
 
   function flowField(lat: number, lon: number) {
-    if (!frames || !manifest || !land) return null;
+    if (!frames || !manifest || !land || !layer.flow) return null;
     if (layer.flow.seaOnly && land.isLand(lat, lon)) return null;
     return flowVector(layer, frames, manifest, lat, lon);
   }
@@ -260,12 +286,22 @@ export async function initGlobe(
     const dpr = Math.min(coarse ? 1.25 : 2, window.devicePixelRatio || 1);
     const fw = Math.round(w * dpr), fh = Math.round(h * dpr);
     if (flow.width !== fw || flow.height !== fh) { flow.width = fw; flow.height = fh; flowStale = true; }
+    if (!layer.flow) {
+      // Nothing moves on this layer: the canvas only carries the probe marker.
+      if (!flowStale) return;
+      flowStale = false;
+      fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      fctx.clearRect(0, 0, w, h);
+      if (!intro) drawMarker(drawnView(), w, h);
+      return;
+    }
+    const seaOnly = layer.flow.seaOnly;
     if (!frames || !land || !onScreen || document.hidden) return;
     if (reducedMotion && !flowStale) return;
     const dv = drawnView();
     const r = radiusPx(dv.zoom, w, h);
     const want = particleCount(Math.min(Math.PI * r * r, w * h), w);
-    const spawn = () => spawnOnDisk(dv, w, h, layer.flow.seaOnly ? land : null, Math.random);
+    const spawn = () => spawnOnDisk(dv, w, h, seaOnly ? land : null, Math.random);
     const gone = (lat: number, lon: number) => {
       if (Math.abs(lat) > 88) return true;
       const p = project(dv, w, h, lat, lon);
@@ -300,6 +336,15 @@ export async function initGlobe(
   async function applyHour(): Promise<void> {
     if (!manifest || !store) return;
     const seq = ++applySeq;
+    if (layer.shade.kind === "tide") {
+      const a = await ensureTide();
+      if (seq !== applySeq) return;
+      renderer.setTidePhases(phasesAt(a, timeAt(hour)));
+      dataReady = true;
+      dirty = flowStale = true;
+      refreshProbe();
+      return;
+    }
     const got = await store.ensure(hour);
     if (seq !== applySeq) return; // a newer hour or another layer has been asked for meanwhile
     const p = got[layer.shade.family];

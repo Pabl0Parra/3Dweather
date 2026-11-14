@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { LAYERS, layerForPath, legendGradient, rampTable, type LayerId } from "./layers";
+import { LAYER_IDS, LAYERS, layerForPath, legendGradient, legendScale, rampTable, rampValue, type LayerId } from "./layers";
 
 const IDS: LayerId[] = ["rain", "wind", "temperature", "waves", "currents"];
 
@@ -44,7 +44,6 @@ test("vector layers index the ramp by speed on a square-root scale", () => {
   expect(t[i * 4 + 3]).toBeGreaterThan(0);
 });
 
-import { legendScale } from "./layers";
 import { DEFAULT_UNITS } from "./units";
 
 test("legend ticks follow the layer and the units", () => {
@@ -73,4 +72,25 @@ test("legend gradient places each ramp stop on the legend's own scale", () => {
   expect(g.endsWith("100.0%")).toBe(true);
   const t = legendGradient(LAYERS.temperature);
   expect(t.split(", rgb").length).toBe(LAYERS.temperature.ramp.length);
+});
+
+test("the tide layer: diverging -3..3 m scale, sea only, no particles", () => {
+  const t = LAYERS.tide;
+  expect(t.path).toBe("/tide-map");
+  expect(t.families).toEqual([]);
+  expect(t.overLand).toBe(false);
+  expect(t.flow).toBeUndefined();
+  expect(t.credits).toMatch(/EOT20/);
+  expect(t.credits).toMatch(/CC BY 4\.0/);
+  expect(rampValue(t, 0)).toBeCloseTo(-3, 6);
+  expect(rampValue(t, 255)).toBeCloseTo(3, 6);
+  const m = legendScale(t, { length: "m", speed: "kn", temp: "C" });
+  expect(m.title).toBe("Tide height");
+  expect(m.unit).toBe("m");
+  expect(m.ticks.map(([, l]) => l)).toEqual(["−3", "−2", "−1", "0", "+1", "+2", "+3"]);
+  expect(m.pos(0)).toBeCloseTo(50, 6);
+  const ft = legendScale(t, { length: "ft", speed: "kn", temp: "C" });
+  expect(ft.unit).toBe("ft");
+  expect(ft.ticks.map(([, l]) => l)).toEqual(["−9", "−6", "−3", "0", "+3", "+6", "+9"]);
+  expect(LAYER_IDS).toContain("tide");
 });
