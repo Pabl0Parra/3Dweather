@@ -138,3 +138,31 @@ test("at phone width the tabs scroll inside the header, not the page", async ({ 
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
   await expect(page.locator('nav[aria-label="Map layers"] a')).toHaveCount(5);
 });
+
+test("switching clears the old layer's particles at once", async ({ page }) => {
+  await open(page, "/wave-map", "#20,-30,1");
+  await page.waitForTimeout(300);
+  await page.route(/globe-[ab]\d\.webp/, async (route) => {
+    await new Promise((r) => setTimeout(r, 3000));
+    await route.continue();
+  });
+  await page.locator('nav[aria-label="Map layers"]').getByRole("link", { name: "Wind" }).click();
+  await page.waitForTimeout(300);
+  const lit = await page.evaluate(() => {
+    const c = document.querySelector<HTMLCanvasElement>("canvas.globe-flow")!;
+    const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+    return n;
+  });
+  expect(lit).toBe(0);
+});
+
+test("at phone width the active tab is scrolled into view", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 740 });
+  await open(page, "/ocean-currents-map", "#20,0,1");
+  const nav = (await page.locator('nav[aria-label="Map layers"]').boundingBox())!;
+  const tab = (await page.locator('nav[aria-label="Map layers"] a[aria-current="page"]').boundingBox())!;
+  expect(tab.x).toBeGreaterThanOrEqual(nav.x - 1);
+  expect(tab.x + tab.width).toBeLessThanOrEqual(nav.x + nav.width + 1);
+});

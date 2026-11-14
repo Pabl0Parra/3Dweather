@@ -93,3 +93,9 @@ test.describe("skipping", () => {
     await expect(page.locator(".site-header")).toHaveCSS("opacity", "1");
   });
 });
+
+test("the splash names the model of the layer being opened", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/wind-map?debug#20,0,1");
+  await expect(page.locator(".sp-model")).toHaveText("MODEL GFS · ECMWF IFS", { timeout: 4000 });
+});

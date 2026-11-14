@@ -123,3 +123,32 @@ test("the currents layer reads the single daily file", async () => {
   await lf.ensure(168);
   expect(urls).toEqual(["/wx/d/globe-c.webp"]); // no ninth frame, no refetch
 });
+
+test("a disposed store stops retrying and stops reporting", async () => {
+  const notices: (string | null)[] = [];
+  let calls = 0;
+  const fetchImpl = (async () => { calls++; throw new TypeError("network down"); }) as unknown as typeof fetch;
+  let wake: () => void = () => {};
+  const store = new FrameStore("/wx", "d", sheetFor(M, "w"), {
+    fetchImpl, decode: decodeFromUrl, sleep: () => new Promise<void>((r) => { wake = r; }),
+  });
+  store.onError = (m) => notices.push(m);
+  void store.ensure(0);
+  await new Promise((r) => setTimeout(r, 0));
+  const before = calls;
+  store.dispose();
+  wake();
+  await new Promise((r) => setTimeout(r, 0));
+  expect(calls).toBe(before);
+  const n = notices.length;
+  store.onError(LOAD_NOTICE_FOR_TEST);
+  expect(notices.length).toBe(n); // onError is detached
+});
+
+test("disposing layer frames disposes every family store", () => {
+  const lf = new LayerFrames("/wx", "d", { ...M, currentFrames: 8, currentEvery: 24 } as GlobeManifest, ["a", "b"], { fetchImpl: okFetch([]), decode: decodeFromUrl });
+  lf.dispose();
+  for (const s of Object.values(lf.stores)) expect(s!.disposed).toBe(true);
+});
+
+const LOAD_NOTICE_FOR_TEST = "x";

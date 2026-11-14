@@ -1,5 +1,6 @@
 // Ignition: a 3 s opening that assembles the real globe and hands over to the live map.
 // Motion runs one timeline for the DOM parts; its playhead is the progress the globe reads.
+import { LAYERS } from "../globe/layers";
 import { animate } from "motion";
 import type { GlobeHandle } from "../globe/globe";
 import { HOLD_S, INTRO_S, introAt, scramble } from "./intro";
@@ -109,7 +110,7 @@ export function playSplash(
       const info = globe.info();
       const r = clamp01((t - 0.3) / 0.5);
       runEl.textContent = scramble(runLabel(info?.run), r, rand);
-      modelEl.textContent = scramble("MODEL GFS-WAVE · OPEN-METEO", r, rand);
+      modelEl.textContent = scramble(`MODEL ${info?.model ?? LAYERS[globe.layer()].model}`, r, rand);
       const n = info?.cells ?? 0;
       const c = 1 - (1 - clamp01((t - 0.3) / 1.3)) ** 3;
       cellsEl.textContent = `CELLS ${Math.round(n * c).toLocaleString("en-US")}`;

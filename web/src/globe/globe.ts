@@ -364,7 +364,7 @@ export async function initGlobe(
 
   function openStore(): LayerFrames {
     const s = new LayerFrames(WX_BASE, latest!.dir, manifest!, layer.families);
-    s.onError = showNotice;
+    s.onError = (m) => { if (s === store) showNotice(m); }; // only the live layer drives the notice
     return s;
   }
 
@@ -376,9 +376,13 @@ export async function initGlobe(
     frames = null;
     applySeq++; // drop frames still arriving for the previous layer
     particles.resize(0, () => [0, 0]);
+    fctx.setTransform(1, 0, 0, 1, 0, 0);
+    fctx.clearRect(0, 0, flow.width, flow.height); // no old trails while the new layer loads
     dirty = flowStale = true;
     probe.hide();
     if (!manifest || !latest) return; // load() opens the store with the new layer
+    store?.dispose();
+    showNotice(null);
     store = openStore();
     showLegend();
     await applyHour();

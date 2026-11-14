@@ -60,6 +60,9 @@ const l = LAYERS[layer];
       const nav = document.querySelector<HTMLElement>('nav[aria-label="Map layers"]')!;
       const session = (() => { try { return window.sessionStorage; } catch { return null; } })();
       const play = shouldPlay(location.search, session);
+      // Phones: the tab row scrolls sideways; keep the active tab in view.
+      const showActive = () => nav.querySelector("a[aria-current]")?.scrollIntoView({ inline: "nearest", block: "nearest" });
+      showActive();
 
       initGlobe(section, {
         layer: main.dataset.layer as LayerId,
@@ -81,6 +84,7 @@ const l = LAYERS[layer];
             document.querySelector('meta[name="description"]')?.setAttribute("content", l.description);
             nav.querySelectorAll("a").forEach((x) => x.toggleAttribute("aria-current", false));
             a.setAttribute("aria-current", "page");
+            showActive();
             main.dataset.layer = id;
             section.setAttribute("aria-label", `Interactive globe showing forecast ${l.legend.title.toLowerCase()}`);
             biggest.textContent = l.biggestLabel;

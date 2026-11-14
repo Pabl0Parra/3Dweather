@@ -26,6 +26,7 @@ type Opts = {
 
 export class FrameStore {
   onError: (message: string | null) => void = () => {};
+  disposed = false;
   private chunks = new Map<number, ImageData>();
   private pending = new Map<number, Promise<void>>();
   private frameCache = new Map<number, Uint8ClampedArray>();
@@ -50,6 +51,14 @@ export class FrameStore {
     const loads = [...need].map((c) => this.load(c));
     for (const c of keep) if (!need.has(c)) void this.load(c);
     await Promise.all(loads);
+  }
+
+  /** Stop retrying and reporting; used when the globe switches away from this layer. */
+  dispose(): void {
+    this.disposed = true;
+    this.onError = () => {};
+    this.chunks.clear();
+    this.frameCache.clear();
   }
 
   pixels(frame: number): Uint8ClampedArray | null {
@@ -86,14 +95,17 @@ export class FrameStore {
 
   private async fetchWithRetry(chunk: number): Promise<void> {
     const url = `${this.base}/${this.dir}/${this.m.url(chunk)}`;
-    for (let attempt = 0; ; attempt++) {
+    for (let attempt = 0; !this.disposed; attempt++) {
       try {
         const res = await this.fetchImpl(url);
         if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-        this.chunks.set(chunk, await this.decode(await res.blob()));
+        const img = await this.decode(await res.blob());
+        if (this.disposed) return;
+        this.chunks.set(chunk, img);
         if (attempt > 0) this.onError(null);
         return;
       } catch {
+        if (this.disposed) return;
         this.onError(LOAD_NOTICE);
         await this.sleep(RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)]);
       }
@@ -117,6 +129,10 @@ export class LayerFrames {
 
   set onError(fn: (message: string | null) => void) {
     for (const s of Object.values(this.stores)) s!.onError = fn;
+  }
+
+  dispose(): void {
+    for (const s of Object.values(this.stores)) s!.dispose();
   }
 
   /** Waits for every family's frames around `hour`; their pixels and blend factor. */
