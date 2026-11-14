@@ -5,6 +5,7 @@ python -m pipeline static --cache DIR --out DIR
 python -m pipeline cycle --cache DIR --out DIR --store (r2|dir:PATH) [--run YYYYMMDDHH]
 python -m pipeline upload --src DIR --prefix KEY --max-age SECONDS --store (r2|dir:PATH)
 python -m pipeline tide-atlas --eot20 ZIP_OR_DIR --out DIR
+python -m pipeline catalogue --inputs DIR --out DIR
 """
 from __future__ import annotations
 
@@ -53,7 +54,18 @@ def main(argv: list[str] | None = None) -> int:
     tide = sub.add_parser("tide-atlas", help="build tide.png and tide.json from EOT20")
     tide.add_argument("--eot20", required=True, type=Path, help="the downloaded EOT20 zip, or a folder of *_ocean_eot20.nc")
     tide.add_argument("--out", required=True, type=Path)
+    cat = sub.add_parser("catalogue", help="build stations.json, search.json and countries.json")
+    cat.add_argument("--inputs", required=True, type=Path, help="folder for the NOAA, GeoNames and coastline inputs")
+    cat.add_argument("--out", required=True, type=Path)
     args = parser.parse_args(argv)
+
+    if args.command == "catalogue":
+        from .catalogue import build_catalogue, fetch_inputs, write_catalogue
+        records = build_catalogue(args.inputs, fetch_inputs(args.inputs))
+        write_catalogue(records, args.inputs, args.out)
+        gauges = sum(r["type"] == "gauge" for r in records)
+        print(f"{len(records)} stations ({gauges} gauges) in {len({r['country_code'] for r in records})} countries -> {args.out}")
+        return 0
 
     if args.command == "tide-atlas":
         from .tide_atlas import build_tide_atlas
