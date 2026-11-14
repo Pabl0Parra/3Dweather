@@ -177,7 +177,7 @@ def test_written_files(tmp_path):
     assert search["fields"] == ["id", "name", "cc", "region", "lat", "lon", "type", "path", "rank"]
     rows = {r[0]: r for r in search["rows"]}
     assert rows["g1"] == ["g1", "Near", "FR", "Île-de-France", 45.0, 0.02, 1, "fr/ile-de-france/near", 4]
-    assert rows["n1611347"][6] == 0 and rows["n1611347"][8] == 9
+    assert rows["n1611347"][6] == 0 and rows["n1611347"][8] == 5  # a gauge ranks like a town of ~100,000
     countries = json.loads((out / "countries.json").read_text(encoding="utf-8"))
     assert sum(c["count"] for c in countries) == len(recs)
     fr = next(c for c in countries if c["cc"] == "FR")

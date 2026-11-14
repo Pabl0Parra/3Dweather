@@ -340,7 +340,7 @@ def build_catalogue(inputs: Path, coast: Path) -> list[dict]:
 
 def _rank(rec: dict) -> int:
     if rec["type"] == "gauge":
-        return 9
+        return 5  # like a town of ~100,000: big cities first, then gauges, then villages
     return max(0, min(8, int(math.log10(rec["_pop"] + 1))))
 
 

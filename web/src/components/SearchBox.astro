@@ -1,0 +1,18 @@
+---
+// Header station search: a button that opens a panel with a combobox; the catalogue loads on first open.
+---
+<div class="search" data-search>
+  <button type="button" class="units-button search-button" aria-expanded="false" aria-controls="search-panel">Search</button>
+  <div class="search-panel" id="search-panel" hidden>
+    <label class="search-label" for="station-search">Search tide stations and places</label>
+    <input id="station-search" class="search-input" type="search" role="combobox" aria-expanded="false"
+      aria-autocomplete="list" aria-controls="station-results" autocomplete="off" spellcheck="false"
+      placeholder="Town, harbour or gauge" />
+    <ul id="station-results" class="search-results" role="listbox" aria-label="Stations"></ul>
+    <p class="search-status" aria-live="polite"></p>
+  </div>
+</div>
+<script>
+  import { mountSearchBox } from "../search/box";
+  document.querySelectorAll<HTMLElement>("[data-search]").forEach((el) => mountSearchBox(el));
+</script>
