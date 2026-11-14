@@ -53,12 +53,15 @@ Repository → **Settings** → **Secrets and variables** → **Actions** →
 ## 4. First runs
 
 1. **Actions** → **Static assets** → **Run workflow**. This uploads the land
-   mask, the coastline and the tide atlas (`tide.json` and the `tide-<hash>.png` it names) to
+   mask, the coastline, one outline per regional map (`regions/{region}.json`)
+   and the tide atlas (`tide.json` and the `tide-<hash>.png` it names) to
    `assets/globe/`. The first run downloads EOT20 (2.3 GB, cached afterwards)
    and takes about 15 minutes.
 2. **Actions** → **Forecast run** → **Run workflow** (leave the run empty).
    It builds the run that is due now and uploads it to `wx/<run>/`, then
-   `wx/latest.json`. Expect 20–40 minutes. If the inputs are not all published
+   `wx/latest.json`. Each run folder also holds the 12 regional maps
+   (`{region}.json`, `{region}-a.webp`, `{region}-b.webp`), and `latest.json`
+   lists them under `"regions"`. Expect 20–40 minutes. If the inputs are not all published
    yet it waits up to 90 minutes, then fails with exit code 2 and the reason in
    the log; nothing is uploaded in that case.
 3. From then on the schedule runs it four times a day (05:15, 11:15, 17:15 and
