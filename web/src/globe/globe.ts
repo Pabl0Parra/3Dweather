@@ -8,6 +8,7 @@ import { drawOverlay } from "./overlay";
 import { initialHour, mountTimeline, type TimelineHandle } from "./timeline";
 import { biggestWave, FLY_MS, FLY_ZOOM, flyView } from "./fly";
 import { formatCoord, Probe, readoutLines } from "./probe";
+import type { Intro } from "../splash/intro";
 import { mountLegend } from "./ui";
 import { loadUnits, mountUnitsMenu, type Units } from "./units";
 import { framePair, loadLatest, loadManifest, type GlobeManifest } from "./manifest";
@@ -21,6 +22,12 @@ export type GlobeHandle = {
   setView(v: View): void;
   hour(): number;
   setHour(h: number): Promise<void>;
+  /** Splash inputs; null = normal drawing. */
+  setIntro(i: Intro | null): void;
+  /** Run time and grid cell count once the manifest has loaded. */
+  info(): { run: string; cells: number } | null;
+  /** Resolves when the first forecast frame is on the globe. */
+  loaded: Promise<void>;
 };
 
 export const DEFAULT_VIEW: View = { lat0: 20, lon0: 0, zoom: 1 };
@@ -62,9 +69,11 @@ export async function initGlobe(
   notice.setAttribute("role", "status");
   notice.hidden = true;
   root.append(canvas, notice);
+  let failLoad = () => {};
   const showNotice = (m: string | null) => {
     notice.textContent = m ?? "";
     notice.hidden = m === null;
+    if (m !== null) failLoad();
   };
 
   const overlay = document.createElement("canvas");
@@ -122,7 +131,16 @@ export async function initGlobe(
     setView: (v) => setView(v),
     hour: () => hour,
     setHour: (h) => { timeline?.setHour(h); return setHour(h); },
+    setIntro: (i) => {
+      intro = i;
+      dirty = overlayDirty = flowStale = true;
+    },
+    info: () => (info ? { ...info } : null),
+    loaded: Promise.resolve(),
   };
+  let intro: Intro | null = null;
+  let info: { run: string; cells: number } | null = null;
+  const drawnView = (): View => (intro ? { ...view, zoom: view.zoom * intro.zoom } : view);
   let timeline: TimelineHandle | null = null;
   function setHour(h: number): Promise<void> {
     hour = h;
@@ -201,14 +219,16 @@ export async function initGlobe(
       dirty = false;
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       const w = root.clientWidth, h = root.clientHeight;
-      renderer.draw(view, w, h, dpr);
+      const dv = drawnView();
+      renderer.body = intro ? intro.body : 1;
+      renderer.draw(dv, w, h, dpr);
       // Both canvases share one size and DPR so they stay aligned.
       const ow = Math.round(w * dpr), oh = Math.round(h * dpr);
       if (overlay.width !== ow || overlay.height !== oh) { overlay.width = ow; overlay.height = oh; overlayDirty = true; }
       if (overlayDirty) {
         overlayDirty = false;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        drawOverlay(ctx, view, w, h, coast);
+        drawOverlay(ctx, dv, w, h, coast, intro ?? undefined);
       }
       if (landReady) handle.drawn = true;
       if (landReady && dataReady) handle.ready = true;
@@ -230,12 +250,13 @@ export async function initGlobe(
     if (flow.width !== fw || flow.height !== fh) { flow.width = fw; flow.height = fh; flowStale = true; }
     if (!pair || !land || !onScreen || document.hidden) return;
     if (reducedMotion && !flowStale) return;
-    const r = radiusPx(view.zoom, w, h);
+    const dv = drawnView();
+    const r = radiusPx(dv.zoom, w, h);
     const want = particleCount(Math.min(Math.PI * r * r, w * h), w);
-    const spawn = () => spawnOnDisk(view, w, h, land, Math.random);
+    const spawn = () => spawnOnDisk(dv, w, h, land, Math.random);
     const gone = (lat: number, lon: number) => {
       if (Math.abs(lat) > 88) return true;
-      const p = project(view, w, h, lat, lon);
+      const p = project(dv, w, h, lat, lon);
       return !p.visible || p.x < -20 || p.y < -20 || p.x > w + 20 || p.y > h + 20;
     };
     if (particles.count !== want) particles.resize(want, spawn);
@@ -244,14 +265,15 @@ export async function initGlobe(
     flowStale = false;
     fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     fctx.clearRect(0, 0, w, h);
-    particles.draw(fctx, view, w, h);
-    drawMarker(w, h);
+    particles.arrival = intro && !reducedMotion ? intro.arrival : 1;
+    particles.draw(fctx, dv, w, h);
+    if (!intro) drawMarker(dv, w, h);
   }
 
-  function drawMarker(w: number, h: number): void {
+  function drawMarker(dv: View, w: number, h: number): void {
     const at = probe.at();
     if (!at) return;
-    const p = project(view, w, h, at.lat, at.lon);
+    const p = project(dv, w, h, at.lat, at.lon);
     if (!p.visible) return;
     fctx.beginPath();
     fctx.arc(p.x, p.y, 6, 0, 2 * Math.PI);
@@ -300,24 +322,33 @@ export async function initGlobe(
     dirty = overlayDirty = true;
   });
 
-  const latest = await withRetry(() => loadLatest(WX_BASE), showNotice);
-  manifest = await withRetry(() => loadManifest(WX_BASE, latest.dir), showNotice);
-  renderer.setGrid(manifest);
-  store = new FrameStore(WX_BASE, latest.dir, "w", manifest);
-  store.onError = showNotice;
+  async function load(): Promise<void> {
+    const latest = await withRetry(() => loadLatest(WX_BASE), showNotice);
+    manifest = await withRetry(() => loadManifest(WX_BASE, latest.dir), showNotice);
+    renderer.setGrid(manifest);
+    info = { run: latest.run, cells: manifest.w * manifest.h };
+    store = new FrameStore(WX_BASE, latest.dir, "w", manifest);
+    store.onError = showNotice;
 
-  const hours = manifest.hours;
-  hour = initialHour(latest.run, new Date(), hours);
-  if (opts.timeline) {
-    timeline = mountTimeline(opts.timeline, { hours, runIso: latest.run, onHour: (h) => void setHour(h) });
-    timeline.setHour(hour);
-    // Autoplay unless reduced motion; playback holds while the globe is off screen.
-    const t = timeline;
-    new IntersectionObserver(([e]) => t.setSuspended(!e.isIntersecting)).observe(root);
-    t.setPlaying(!window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    const hours = manifest.hours;
+    hour = initialHour(latest.run, new Date(), hours);
+    if (opts.timeline) {
+      timeline = mountTimeline(opts.timeline, { hours, runIso: latest.run, onHour: (h) => void setHour(h) });
+      timeline.setHour(hour);
+      // Autoplay unless reduced motion; playback holds while the globe is off screen.
+      const t = timeline;
+      new IntersectionObserver(([e]) => t.setSuspended(!e.isIntersecting)).observe(root);
+      t.setPlaying(!window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    }
+    const setLegendUnit = opts.legend ? mountLegend(opts.legend, units.length) : null;
+    unitListeners.push((u) => setLegendUnit?.(u.length));
+    await applyHour();
   }
-  const setLegendUnit = opts.legend ? mountLegend(opts.legend, units.length) : null;
-  unitListeners.push((u) => setLegendUnit?.(u.length));
-  await applyHour();
+  // The first failure rejects `loaded` (the splash stops waiting); loading itself keeps retrying.
+  handle.loaded = new Promise<void>((resolve, reject) => {
+    failLoad = () => reject(new Error(LOAD_NOTICE));
+    load().then(resolve);
+  });
+  handle.loaded.catch(() => {});
   return handle;
 }
