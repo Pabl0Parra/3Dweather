@@ -1,5 +1,6 @@
 // Mounts the globe: canvases, data loading, view state and the draw loop.
-import { landGridFrom, type LandGrid } from "./field";
+import { landGridFrom, sampleWave, type LandGrid } from "./field";
+import { particleCount, Particles, spawnOnDisk, TRAIL } from "./particles";
 import { FrameStore, RETRY_DELAYS_MS, LOAD_NOTICE } from "./frames";
 import { attachGestures } from "./gestures";
 import { formatHash, parseHash } from "./hash";
@@ -8,7 +9,7 @@ import { initialHour, mountTimeline, type TimelineHandle } from "./timeline";
 import { mountLegend } from "./ui";
 import { framePair, loadLatest, loadManifest, type GlobeManifest } from "./manifest";
 import { GlobeRenderer } from "./renderer";
-import { clampView, type View } from "./view";
+import { clampView, project, radiusPx, type View } from "./view";
 
 export type GlobeHandle = {
   ready: boolean;
@@ -70,6 +71,17 @@ export async function initGlobe(
   const ctx = overlay.getContext("2d")!;
   let coast: number[][] = [];
 
+  const flow = document.createElement("canvas");
+  flow.className = "globe-flow";
+  flow.setAttribute("aria-hidden", "true");
+  overlay.after(flow);
+  const fctx = flow.getContext("2d")!;
+  const particles = new Particles();
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const coarse = window.matchMedia("(pointer: coarse)").matches;
+  let onScreen = true;
+  let flowStale = true; // reduced motion: redraw the still trails
+
   let renderer: GlobeRenderer;
   try {
     renderer = new GlobeRenderer(canvas);
@@ -115,16 +127,17 @@ export async function initGlobe(
   let hashTimer = 0;
   function setView(v: View): void {
     view = clampView(v);
-    dirty = overlayDirty = true;
+    dirty = overlayDirty = flowStale = true;
     clearTimeout(hashTimer);
     hashTimer = window.setTimeout(() => history.replaceState(null, "", formatHash(view)), 600);
   }
   window.addEventListener("hashchange", () => {
     const v = parseHash(location.hash);
-    if (v) { view = v; dirty = overlayDirty = true; }
+    if (v) { view = v; dirty = overlayDirty = flowStale = true; }
   });
 
-  new ResizeObserver(() => { dirty = overlayDirty = true; }).observe(root);
+  new ResizeObserver(() => { dirty = overlayDirty = flowStale = true; }).observe(root);
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; }).observe(root);
   attachGestures(root, () => view, setView, () => ({ w: root.clientWidth, h: root.clientHeight }));
 
   const frame = () => {
@@ -144,8 +157,39 @@ export async function initGlobe(
       if (landReady) handle.drawn = true;
       if (landReady && dataReady) handle.ready = true;
     }
+    drawFlow();
     requestAnimationFrame(frame);
   };
+
+  function waveField(lat: number, lon: number) {
+    if (!pair || !manifest || !land || land.isLand(lat, lon)) return null;
+    const s = sampleWave(pair.a, pair.b, pair.mix, manifest, lat, lon);
+    return { u: s.u, v: s.v };
+  }
+
+  function drawFlow(): void {
+    const w = root.clientWidth, h = root.clientHeight;
+    const dpr = Math.min(coarse ? 1.25 : 2, window.devicePixelRatio || 1);
+    const fw = Math.round(w * dpr), fh = Math.round(h * dpr);
+    if (flow.width !== fw || flow.height !== fh) { flow.width = fw; flow.height = fh; flowStale = true; }
+    if (!pair || !land || !onScreen || document.hidden) return;
+    if (reducedMotion && !flowStale) return;
+    const r = radiusPx(view.zoom, w, h);
+    const want = particleCount(Math.min(Math.PI * r * r, w * h), w);
+    const spawn = () => spawnOnDisk(view, w, h, land, Math.random);
+    const gone = (lat: number, lon: number) => {
+      if (Math.abs(lat) > 88) return true;
+      const p = project(view, w, h, lat, lon);
+      return !p.visible || p.x < -20 || p.y < -20 || p.x > w + 20 || p.y > h + 20;
+    };
+    if (particles.count !== want) particles.resize(want, spawn);
+    // Reduced motion: pre-run a full trail and draw it once, without animating.
+    for (let k = reducedMotion ? TRAIL : 1; k > 0; k--) particles.step(waveField, spawn, gone);
+    flowStale = false;
+    fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    fctx.clearRect(0, 0, w, h);
+    particles.draw(fctx, view, w, h);
+  }
   requestAnimationFrame(frame);
 
   let applySeq = 0;
@@ -166,13 +210,14 @@ export async function initGlobe(
       if (pair) pair.mix = fp.mix;
     }
     dataReady = true;
-    dirty = true;
+    dirty = flowStale = true;
   }
 
   void withRetry(() => loadBitmap(`${ASSET_BASE}/land-mask.png`), showNotice).then((img) => {
     renderer.setLandMask(img);
     land = landGridFrom(img);
     landReady = true;
+    flowStale = true;
     dirty = true;
   });
 

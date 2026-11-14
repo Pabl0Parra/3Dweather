@@ -128,6 +128,19 @@ test("without WebGL the page says so instead of staying blank", async ({ page })
   expect(errors).toEqual([]);
 });
 
+test("particle trails are drawn over the sea", async ({ page }) => {
+  await open(page, "#20,-30,1");
+  await page.waitForTimeout(300);
+  const lit = await page.evaluate(() => {
+    const c = document.querySelector<HTMLCanvasElement>("canvas.globe-flow")!;
+    const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+    return n;
+  });
+  expect(lit).toBeGreaterThan(200);
+});
+
 test("no console errors on load", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
