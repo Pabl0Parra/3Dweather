@@ -167,6 +167,48 @@ test("units still switch when storage is blocked", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+async function clickCentre(page: Page) {
+  const box = (await page.locator("#globe").boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+}
+
+test("a tap at the reference peak reads its wave height, in feet too", async ({ page }) => {
+  await open(page, "#44.28,-140.92,4");
+  await clickCentre(page);
+  const probe = page.getByRole("dialog", { name: "Conditions here" });
+  await expect(probe).toContainText(/1[34]\.\d m/);
+  await expect(probe).toContainText(/Period \d+ s/);
+  await expect(probe).toContainText(/From [NESW]{1,2} \(\d+°\)/);
+  await page.getByRole("button", { name: "Units" }).click();
+  await page.getByRole("radio", { name: "ft" }).check();
+  await expect(probe).toContainText(/4[3-6]\.\d ft/);
+  await page.keyboard.press("Escape"); // closes the units menu
+  await page.keyboard.press("Escape");
+  await expect(probe).toBeHidden();
+});
+
+test("a tap on land says there is no wave data", async ({ page }) => {
+  await open(page, "#40.4,-3.7,4");
+  await clickCentre(page);
+  await expect(page.getByRole("dialog", { name: "Conditions here" })).toContainText("Land");
+});
+
+test("drags never open the readout", async ({ page }) => {
+  await open(page, "#20,-30,1");
+  const box = (await page.locator("#globe").boundingBox())!;
+  const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 200, cy, { steps: 8 });
+  await page.mouse.up();
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 30, cy, { steps: 4 });
+  await page.mouse.move(cx, cy, { steps: 4 }); // out and back to the start point
+  await page.mouse.up();
+  await expect(page.getByRole("dialog", { name: "Conditions here" })).toBeHidden();
+});
+
 test("no console errors on load", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });

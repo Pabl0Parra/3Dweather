@@ -6,11 +6,12 @@ import { attachGestures } from "./gestures";
 import { formatHash, parseHash } from "./hash";
 import { drawOverlay } from "./overlay";
 import { initialHour, mountTimeline, type TimelineHandle } from "./timeline";
+import { formatCoord, Probe, readoutLines } from "./probe";
 import { mountLegend } from "./ui";
 import { loadUnits, mountUnitsMenu, type Units } from "./units";
 import { framePair, loadLatest, loadManifest, type GlobeManifest } from "./manifest";
 import { GlobeRenderer } from "./renderer";
-import { clampView, project, radiusPx, type View } from "./view";
+import { clampView, project, radiusPx, unproject, type View } from "./view";
 
 export type GlobeHandle = {
   ready: boolean;
@@ -143,7 +144,36 @@ export async function initGlobe(
 
   new ResizeObserver(() => { dirty = overlayDirty = flowStale = true; }).observe(root);
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; }).observe(root);
-  attachGestures(root, () => view, setView, () => ({ w: root.clientWidth, h: root.clientHeight }));
+  const probe = new Probe(root);
+  probe.onHide = () => { flowStale = true; };
+  function refreshProbe(): void {
+    const at = probe.at();
+    if (!at) return;
+    const { lat, lon } = at;
+    let lines: string[];
+    if (land?.isLand(lat, lon)) lines = readoutLines(null, lat, lon, units);
+    else if (!pair || !manifest) lines = ["Forecast still loading…", formatCoord(lat, lon)];
+    else lines = readoutLines(sampleWave(pair.a, pair.b, pair.mix, manifest, lat, lon), lat, lon, units);
+    probe.show(lat, lon, lines);
+  }
+  function probeAt(lat: number, lon: number): void {
+    probe.show(lat, lon, []);
+    refreshProbe();
+    flowStale = true;
+  }
+  unitListeners.push(() => refreshProbe());
+
+  attachGestures(
+    root,
+    () => view,
+    setView,
+    () => ({ w: root.clientWidth, h: root.clientHeight }),
+    (x, y) => {
+      const p = unproject(view, root.clientWidth, root.clientHeight, x, y);
+      if (p) probeAt(p.lat, p.lon); else probe.hide();
+    },
+    () => probe.hide(),
+  );
 
   const frame = () => {
     if (dirty) {
@@ -194,6 +224,19 @@ export async function initGlobe(
     fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     fctx.clearRect(0, 0, w, h);
     particles.draw(fctx, view, w, h);
+    drawMarker(w, h);
+  }
+
+  function drawMarker(w: number, h: number): void {
+    const at = probe.at();
+    if (!at) return;
+    const p = project(view, w, h, at.lat, at.lon);
+    if (!p.visible) return;
+    fctx.beginPath();
+    fctx.arc(p.x, p.y, 6, 0, 2 * Math.PI);
+    fctx.lineWidth = 2;
+    fctx.strokeStyle = "#3fe0ff";
+    fctx.stroke();
   }
   requestAnimationFrame(frame);
 
@@ -216,6 +259,7 @@ export async function initGlobe(
     }
     dataReady = true;
     dirty = flowStale = true;
+    refreshProbe();
   }
 
   void withRetry(() => loadBitmap(`${ASSET_BASE}/land-mask.png`), showNotice).then((img) => {
