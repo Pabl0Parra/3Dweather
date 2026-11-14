@@ -1,4 +1,5 @@
 // Mounts the globe: canvases, data loading, view state and the draw loop.
+import { landGridFrom, type LandGrid } from "./field";
 import { FrameStore, RETRY_DELAYS_MS, LOAD_NOTICE } from "./frames";
 import { attachGestures } from "./gestures";
 import { formatHash, parseHash } from "./hash";
@@ -91,6 +92,9 @@ export async function initGlobe(
   let manifest: GlobeManifest | null = null;
   let store: FrameStore | null = null;
   let shown = { a: -1, b: -1 };
+  // CPU copies for particles, the probe and the peak search.
+  let pair: { a: Uint8ClampedArray; b: Uint8ClampedArray; mix: number } | null = null;
+  let land: LandGrid | null = null;
 
   const handle: GlobeHandle = {
     ready: false,
@@ -148,16 +152,18 @@ export async function initGlobe(
   async function applyHour(): Promise<void> {
     if (!manifest || !store) return;
     const seq = ++applySeq;
-    const pair = framePair(manifest, hour);
-    await store.ensure(pair.a, pair.b);
+    const fp = framePair(manifest, hour);
+    await store.ensure(fp.a, fp.b);
     if (seq !== applySeq) return; // a newer hour has been asked for meanwhile
-    if (pair.a !== shown.a || pair.b !== shown.b) {
-      const a = store.pixels(pair.a), b = store.pixels(pair.b);
+    if (fp.a !== shown.a || fp.b !== shown.b) {
+      const a = store.pixels(fp.a), b = store.pixels(fp.b);
       if (!a || !b) return;
-      renderer.setFrames(a, b, pair.mix);
-      shown = { a: pair.a, b: pair.b };
+      renderer.setFrames(a, b, fp.mix);
+      shown = { a: fp.a, b: fp.b };
+      pair = { a, b, mix: fp.mix };
     } else {
-      renderer.setMix(pair.mix);
+      renderer.setMix(fp.mix);
+      if (pair) pair.mix = fp.mix;
     }
     dataReady = true;
     dirty = true;
@@ -165,6 +171,7 @@ export async function initGlobe(
 
   void withRetry(() => loadBitmap(`${ASSET_BASE}/land-mask.png`), showNotice).then((img) => {
     renderer.setLandMask(img);
+    land = landGridFrom(img);
     landReady = true;
     dirty = true;
   });
