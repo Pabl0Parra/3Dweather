@@ -25,3 +25,4 @@ dist/
 # Pipeline working files
 data/
 _tmp/
+*.egg-info/
