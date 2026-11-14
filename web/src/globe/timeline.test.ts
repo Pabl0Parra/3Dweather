@@ -32,3 +32,12 @@ test("past labels", () => {
   const now = new Date("2026-11-14T06:00Z");
   expect(timeLabel(RUN, 12, now, "UTC")).toBe("Fri 13 Nov, 18:00 · 12 h ago");
 });
+
+import { midnights } from "./timeline";
+
+test("midnights follow the given zone, half-hour zones included", () => {
+  // run 13 Nov 06:00 UTC; London midnights at 14 Nov 00:00 UTC = hour 18, then 42, 66
+  expect(midnights("2026-11-13T06:00Z", 72, "Europe/London")).toEqual([18, 42, 66]);
+  // Kolkata is UTC+5:30: 14 Nov 00:00 local = 13 Nov 18:30 UTC = hour 12.5
+  expect(midnights("2026-11-13T06:00Z", 72, "Asia/Kolkata")).toEqual([12.5, 36.5, 60.5]);
+});

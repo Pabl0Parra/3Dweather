@@ -5,8 +5,11 @@ currents and tides on a 3D Earth, built from open forecast data. Scheduled jobs
 turn each model run into static image files; the site reads those files and
 needs no server.
 
-Status: the globe has five layers (rain and cloud, wind, temperature, waves,
-currents), built every 6 hours by GitHub Actions and published to Cloudflare R2.
+Status: the globe has six layers (rain and cloud, wind, temperature, waves,
+currents, tides), and 12 flat regional maps (`/weather-map/{region}` and
+`/wind-map/{region}`) show wind, rain and cloud hour by hour for three days.
+Everything is built every 6 hours by GitHub Actions and published to
+Cloudflare R2.
 The design is in `docs/superpowers/specs/`; publishing setup is in
 [`docs/deploy.md`](docs/deploy.md).
 

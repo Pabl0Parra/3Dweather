@@ -1,0 +1,60 @@
+/* Flat regional map pages; header, controls, timeline, legend and probe come from globe.css. */
+.region-page { max-width: 1100px; margin: 0 auto; padding: 0 16px 48px; }
+.region-page h1 { font-size: clamp(22px, 4vw, 30px); margin: 12px 0 6px; line-height: 1.2; }
+.region-page h2 { font-size: 20px; margin: 32px 0 8px; }
+.region-page h3 { font-size: 15px; margin: 18px 0 4px; }
+.region-page p { line-height: 1.55; }
+.region-page a { color: var(--cyan); }
+.rm-crumbs { margin-top: 12px; font-size: 13px; color: var(--dim); }
+.rm-lede { color: var(--dim); margin: 0 0 12px; }
+.rm-small { font-size: 13px; color: var(--dim); }
+
+.rm-regions { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.rm-regions a {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--dim);
+  text-decoration: none;
+  font-size: 13px;
+}
+.rm-regions a:hover { color: var(--ink); }
+.rm-regions a[aria-current="page"] { color: var(--ink); background: #0b1628; }
+
+.rm-map {
+  position: relative;
+  height: min(70vh, 640px);
+  min-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 12px 12px 0 0;
+  overflow: hidden;
+  background: #081a2e;
+  touch-action: pan-y; /* one finger scrolls the page; two fingers pan and zoom the map */
+  cursor: grab;
+}
+.rm-map:active { cursor: grabbing; }
+.rm-map:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.rm-map canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.rm-notice {
+  position: absolute; left: 50%; top: 16px; transform: translateX(-50%); z-index: 5;
+  margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--panel); font-size: 13px;
+}
+
+.rm-controls { border: 1px solid var(--line); border-top: 0; border-radius: 0 0 12px 12px; }
+.rm-layers { display: flex; gap: 4px; }
+.rm-layers button {
+  padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
+  background: transparent; color: var(--dim); font: inherit; font-size: 13px; cursor: pointer;
+}
+.rm-layers button[aria-pressed="true"] { color: var(--ink); background: #0b1628; border-color: var(--cyan); }
+.rm-controls #timeline { flex: 1 1 320px; min-width: 0; }
+.rm-hint { font-size: 12px; color: var(--dim); margin: 8px 0 0; }
+
+.rm-peaks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.rm-peak {
+  display: block; width: 100%; text-align: left; padding: 12px 14px; border-radius: 10px;
+  border: 1px solid var(--line); background: #060d1a; color: var(--ink); font: inherit; cursor: pointer;
+}
+.rm-peak:hover { border-color: var(--cyan); }
+.rm-peak strong { font-size: 20px; margin-right: 6px; }
+.rm-peak-title { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }

@@ -334,6 +334,17 @@ These cannot be matched from outside; each is our own rule, documented as such.
     pressure flicker frame to frame). Rain agrees except at hours 72-119, where neither the
     hourly nor a 3-hourly reading reproduces the reference; the inputs were
     saved a day after the reference built the run.
+- **Phase 6 results (2026-11-14, regional maps).** Same run, Europe, all 73
+  hourly frames against the captured `wx__2026111306__europe.json`:
+  - Grid: identical (350 × 167 cells, every second GFS 13 km node, same bounds).
+  - Wind peaks: all 73 identical in value and position. Each cell reads its
+    GFS node; averaging or bilinear sampling did not match.
+  - Rain peaks: our own fitted rule (mean rate over the hour before and after,
+    hourly steps up to hour 72, at the node, then a separable [1, 5, 1]/7
+    smoothing). Largest difference 0.7 mm/h, mean bias +0.04 mm/h, 66 of 73
+    positions within 2 cells. The test requires at most 1.0 mm/h and 64 of 73.
+  - Cloud: the globe's own rule at the node (section 8); not compared.
+  - `hours` in the manifest is the frame count (73), as in the reference.
 - **Tide test.** New York City, November 2026: our high and low waters against
   the captured station data, within 2 minutes and 2 cm. The reference site's
   own FES-vs-NOAA comparison gives the expected error for FES stations.

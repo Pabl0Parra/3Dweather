@@ -8,6 +8,7 @@ from PIL import Image
 from pipeline.__main__ import main
 from pipeline.build import RunSources, build_run
 from pipeline.codecs import encode_pressure
+from pipeline.regions import REGIONS, RegionGrid
 from pipeline.regrid import SourceGrid
 from pipeline.sources.openmeteo import RunIncomplete, VariableAbsent
 from pipeline.sprites import unpack_frame
@@ -33,6 +34,7 @@ class FakeModel:
         self.values = values or {}
         self.absent = set(absent)  # (variable, time) pairs whose file lacks the variable
         self.evicted: list[datetime] = []
+        self.log: list[tuple[str, datetime]] = []  # reads and evictions in order
 
     def meta(self):
         return {"completed": True, "variables": list(self.variables), "valid_times": [iso(t) for t in self.times]}
@@ -45,8 +47,10 @@ class FakeModel:
 
     def evict_before(self, t):
         self.evicted.append(t)
+        self.log.append(("evict", t))
 
     def field(self, variable, t):
+        self.log.append(("read", t))
         if t not in self.times or variable not in self.variables:
             raise RunIncomplete(f"no {variable} at {iso(t)}")
         if (variable, t) in self.absent:
@@ -198,7 +202,8 @@ def test_write_latest(tmp_path):
     write_latest(tmp_path, datetime(2026, 11, 13, 6, tzinfo=timezone.utc),
                  datetime(2026, 11, 14, 9, 30, tzinfo=timezone.utc))
     assert json.loads((tmp_path / "latest.json").read_text()) == {
-        "run": "2026-11-13T06:00Z", "dir": "2026111306", "built": "2026-11-14T09:30:00Z"}
+        "run": "2026-11-13T06:00Z", "dir": "2026111306", "built": "2026-11-14T09:30:00Z",
+        "regions": [r.slug for r in REGIONS]}
     assert not (tmp_path / "latest.json.part").exists()
 
 
@@ -233,7 +238,14 @@ def test_prune_evicts_inputs_once_no_later_frame_needs_them(tmp_path):
         assert ev and ev == sorted(ev) and ev[-1] > last, name  # everything goes at the end
     # while frames remain, nothing a later frame reads is evicted
     gfs_cuts = src.gfs.evicted[:-1]
-    assert all(c <= RUN + (3 * j + 2) * H for j, c in enumerate(gfs_cuts))  # rain reads (t-1h, t+1h]
+    assert all(c <= RUN + (3 * j + 1) * H for j, c in enumerate(gfs_cuts))  # regional hours read back to t-2h
+    for name in ("wave", "gfs", "g25", "ifs", "cur", "sst"):  # no read of anything already evicted
+        cut = None
+        for kind, t in getattr(src, name).log:
+            if kind == "evict":
+                cut = t if cut is None else max(cut, t)
+            else:
+                assert cut is None or t >= cut, (name, t, cut)
     assert all(c <= RUN + 3 * j * H - 3 * H for j, c in enumerate(src.ifs.evicted[:-1]))
 
 
@@ -244,3 +256,47 @@ def test_cli_prune_is_opt_in(tmp_path, monkeypatch):
     main(["build", "--run", "2026111306", "--cache", str(tmp_path), "--out", str(tmp_path)])
     main(["build", "--run", "2026111306", "--cache", str(tmp_path), "--out", str(tmp_path), "--prune"])
     assert seen == [{"prune": False}, {"prune": True}]
+
+
+
+
+def test_writes_every_region(built):
+    for r in REGIONS:
+        g = RegionGrid.of(r, SG)
+        for fam in "ab":
+            assert Image.open(built / f"{r.slug}-{fam}.webp").size == (8 * g.w, 10 * g.h), (r.slug, fam)
+        m = json.loads((built / f"{r.slug}.json").read_text(encoding="utf-8"))
+        assert m["region"] == r.slug and m["run"] == "2026-11-13T06:00Z" and m["hours"] == 73 and m["cols"] == 8
+        assert (m["w"], m["h"], m["west"], m["north"]) == (g.w, g.h, g.west, g.north)
+        assert m["focus"] == list(r.focus) and m["tz"] == r.tz and m["place"] == r.place
+        assert m["cities"] == [list(c) for c in r.cities] and m["masked"] is False
+        assert len(m["peaks"]["wind"]) == 73 and len(m["peaks"]["rain"]) == 73
+        assert m["peaks"]["wind"][5][0] == 11.2  # hypot(10, -5)
+        assert m["peaks"]["rain"][0][0] == 2.0 and m["peaks"]["rain"][5][0] == 2.0  # hour 0 reads the step to hour 1
+
+
+def test_regional_frames_encode_wind_rain_and_cloud(built):
+    from pipeline.codecs import encode_wind
+    r = next(r for r in REGIONS if r.slug == "europe")
+    g = RegionGrid.of(r, SG)
+    a = np.asarray(Image.open(built / "europe-a.webp").convert("RGB"))
+    b = np.asarray(Image.open(built / "europe-b.webp").convert("RGB"))
+    cell = lambda img, j: img[(j // 8) * g.h:(j // 8 + 1) * g.h, (j % 8) * g.w:(j % 8 + 1) * g.w]
+    f0, f5 = cell(a, 0), cell(a, 5)
+    assert (f5[..., 0] == encode_wind(np.array([10.0]))[0]).all() and (f5[..., 1] == encode_wind(np.array([-5.0]))[0]).all()
+    assert (f0[..., 2] > 0).all() and (f5[..., 2] > 0).all()
+    assert (cell(b, 0) == 0).all() and (cell(b, 5)[..., 0] > 0).all()  # no cloud at the analysis hour
+    assert (cell(a, 72) != 0).any() and (cell(a, 73) == 0).all()  # 73 frames, the rest of the sheet blank
+
+
+def test_latest_lists_the_regions(tmp_path):
+    from pipeline.build import write_latest
+    write_latest(tmp_path, RUN, RUN)
+    assert json.loads((tmp_path / "latest.json").read_text())["regions"] == [r.slug for r in REGIONS]
+
+
+def test_regional_hours_need_hourly_gfs(tmp_path):
+    src = fake_sources()
+    src.gfs.times = [t for t in src.gfs.times if t != RUN + 40 * H]  # hour 40 (14 Nov 22:00) is not a globe frame
+    with pytest.raises(RunIncomplete, match="gfs 2026-11-14T22:00Z"):
+        build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=src, ice=NO_ICE)
