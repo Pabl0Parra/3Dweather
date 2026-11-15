@@ -86,9 +86,19 @@ The token from step 2 needs read and write access to the private bucket too.
 
 Check it worked: `https://pub-….r2.dev/wx/latest.json` should name the run.
 4. **Actions** → **Site** → **Run workflow** (it also runs on every push to
-   `main`). It downloads `catalogue/stations.json` from the bucket, builds the
-   site with one page per station (about 24,500 pages, about a minute) and
-   uploads it to the root of the bucket. Only files whose content changed go up;
+   `main`, and every day at 00:30 UTC). It downloads `catalogue/stations.json`
+   and `tide-constants.json` from the bucket (from `R2_PRIVATE_BUCKET` when that
+   secret is set), writes each station's month of tides, sun and moon
+   (`python -m pipeline station-data`, about 2 minutes; the first run of a
+   month also computes the month's sun and moon, about 45 minutes), builds the
+   site with one page per station (about 24,500 pages, about 5 minutes, 1.3 GB) and
+   uploads it to the root of the bucket. The month's sun and moon data are
+   computed on the first run of each month and kept in the Actions cache
+   (`sky-months`), so later days are quicker. Pages read the weather from `wx/`
+   and other months from `tides/` in the browser. Without `tide-constants.json`
+   the pages are built without tide data and say the table is on its way.
+   Every station page changes each day, so a daily run uploads about 24,500
+   files (about 735,000 writes a month, inside R2's free 1 million). Only files whose content changed go up;
    `site-manifest.json` in the bucket remembers what was published, so pages
    that leave the catalogue are deleted. It never touches `wx/`, `assets/` or
    `catalogue/`. The first upload sends every page and takes several minutes.

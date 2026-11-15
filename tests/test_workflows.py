@@ -120,3 +120,21 @@ def test_forecast_samples_the_catalogue_when_it_exists():
     t = text("forecast.yml")
     assert "python -m pipeline get --key catalogue/stations.json" in t
     assert 'ARGS+=(--catalogue "$RUNNER_TEMP/stations.json")' in t
+
+
+def test_site_rebuilds_daily_with_station_data():
+    t = text("site.yml")
+    assert "schedule:" in t and "cron: '30 0 * * *'" in t
+    assert 'python -m pip install -e ".[publish,sky]"' in t
+    # Constants from the private bucket when set (FES2022), else next to the catalogue.
+    assert "--key tides-private/tide-constants.json" in t and '--store "r2:$R2_PRIVATE_BUCKET"' in t
+    assert "--key catalogue/tide-constants.json" in t and "secrets.R2_PRIVATE_BUCKET" in t
+    # DE421 and each month's sky data are kept between runs.
+    assert "path: sky-cache" in t and "path: sky-months" in t
+    assert "actions/cache/save@v4" in t and "if: always()" in t
+    sd = t.index("python -m pipeline station-data")
+    assert sd < t.index("npm run build")
+    assert "--sky-store sky-months" in t and '--out "$RUNNER_TEMP/station-data"' in t
+    assert "STATION_DATA_DIR: ${{ runner.temp }}/station-data" in t
+    assert "PUBLIC_TIDES_BASE: /tides" in t
+    assert "python -m pipeline publish-site --dist web/dist --store r2" in t

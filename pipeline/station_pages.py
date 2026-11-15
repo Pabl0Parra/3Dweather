@@ -86,8 +86,8 @@ def station_data(rec: dict, entry: dict | None, constants: dict[str, dict], toda
 _W: dict = {}
 
 
-def _init(sky_cache: str, stations: dict, coef: dict, months: dict) -> None:
-    _W.update(sky=load_sky(Path(sky_cache)), stations=stations, coef=coef, months=months)
+def _init(sky_cache: str, stations: dict, coef: dict) -> None:
+    _W.update(sky=load_sky(Path(sky_cache)), stations=stations, coef=coef)
 
 
 def _sky_job(key: tuple) -> tuple:
@@ -97,11 +97,11 @@ def _sky_job(key: tuple) -> tuple:
 
 
 def _write_job(job: tuple) -> int:
-    items, out = job
-    for rec, today, donor, key in items:
+    items, out = job  # each item carries its own sky month: workers never hold the whole set
+    for rec, today, donor, month in items:
         entry = _W["stations"].get(rec["id"])
         body = station_data(rec, entry, _W["stations"], today, _W["sky"], _W["coef"], donor=donor,
-                            sky_month=_W["months"][key])
+                            sky_month=month)
         p = Path(out) / f"{rec['path']}.json"
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(body, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
@@ -165,10 +165,10 @@ def write_station_data(catalogue: list[dict], constants: dict, now: datetime, ou
             missing.append(k)
     if workers > 1 and missing:
         with ProcessPoolExecutor(max_workers=workers, initializer=_init,
-                                 initargs=(str(sky_cache), {}, {}, {})) as pool:
+                                 initargs=(str(sky_cache), {}, {})) as pool:
             computed = list(pool.map(_sky_job, missing, chunksize=16))
     else:
-        _init(str(sky_cache), {}, {}, {})
+        _init(str(sky_cache), {}, {})
         computed = [_sky_job(k) for k in missing]
     for k, month in computed:
         months[k] = month
@@ -178,13 +178,15 @@ def write_station_data(catalogue: list[dict], constants: dict, now: datetime, ou
             _save_months(sky_store, m, data)
 
     # Pass 2: one file per station.
-    chunks = [(items[i:i + 200], str(out)) for i in range(0, len(items), 200)]
+    del stored
+    jobs = [(r, today, donor, months[key]) for r, today, donor, key in items]
+    chunks = [(jobs[i:i + 200], str(out)) for i in range(0, len(jobs), 200)]
     if workers > 1:
         with ProcessPoolExecutor(max_workers=workers, initializer=_init,
-                                 initargs=(str(sky_cache), stations, coef, months)) as pool:
+                                 initargs=(str(sky_cache), stations, coef)) as pool:
             written = sum(pool.map(_write_job, chunks))
     else:
-        _init(str(sky_cache), stations, coef, months)
+        _init(str(sky_cache), stations, coef)
         written = sum(_write_job(c) for c in chunks)
     with_tides = sum(1 for r in catalogue if stations.get(r["id"], {}).get("kind", "none") != "none")
     return {"written": written, "with_tides": with_tides, "sky_computed": len(computed)}
