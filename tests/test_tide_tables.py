@@ -36,7 +36,8 @@ def constants():
 
 
 def rec(id_, name, path, type_="place"):
-    return {"id": id_, "name": name, "path": path, "type": type_, "latitude": 40.7, "longitude": -74.0}
+    return {"id": id_, "name": name, "path": path, "type": type_, "latitude": 40.7, "longitude": -74.0,
+            "timezone": "America/New_York"}
 
 
 CATALOGUE = [
@@ -145,3 +146,11 @@ def test_new_york_city_matches_the_capture():
     assert len(got) == len(want)
     for (t, h, k), (wt, wh, wk) in zip(got, want):
         assert k == wk and abs((t - wt).total_seconds()) <= 120 + 59 and abs(h - wh) <= 0.02
+
+
+def test_tables_name_their_station_and_time_zone(tmp_path):
+    out = tmp_path / "tides"
+    write_tables(CATALOGUE, constants(), date(2026, 11, 14), out)
+    bat = json.loads((out / "us/new-york/the-battery.json").read_text(encoding="utf-8"))
+    rec = next(r for r in CATALOGUE if r["id"] == "n8518750")
+    assert bat["name"] == rec["name"] and bat["tz"] == rec["timezone"]

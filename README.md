@@ -16,7 +16,8 @@ tidal-coefficient data come from JPL DE421. Station pages, rebuilt daily, show
 the day's tide chart, the month's table, sun and moon, the weather forecast at
 the station, other months and a CSV download.
 A home page, country and region pages, a finder map (OpenStreetMap), guides
-and sitemaps round out the site. Everything is built by GitHub Actions and published to Cloudflare R2.
+and sitemaps round out the site. Any page can embed a tide widget for a place
+(`/embed` makes the iframe code). Everything is built by GitHub Actions and published to Cloudflare R2.
 The design is in `docs/superpowers/specs/`; publishing setup is in
 [`docs/deploy.md`](docs/deploy.md).
 

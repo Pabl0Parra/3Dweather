@@ -202,6 +202,7 @@ const json = data ? JSON.stringify({ ...data, path: s.path, cc: s.country_code.t
       <footer class="st-footer">
         <a href="/">Home</a> · <a href="/stations">All places</a> · <a href="/guides">Guides</a> ·
         <a href="/about">About</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
+        {data?.has_tides && <> · <a href={`/embed?station=${s.path}`} data-embed-link>Embed this tide widget</a></>}
       </footer>
     </main>
     {data && <script type="application/json" id="st-data" set:html={json}></script>}

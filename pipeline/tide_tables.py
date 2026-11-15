@@ -1,6 +1,6 @@
 """Monthly tide tables: high and low waters for every station, 12 months either side of the run month.
 
-``tides/{path}.json`` = ``{"v": 1, "id", "source", "donor": {name, path} | null, "datum": "MSL",
+``tides/{path}.json`` = ``{"v": 1, "id", "name", "tz", "source", "donor": {name, path} | null, "datum": "MSL",
 "from", "to", "turns": [[minutes since from, height cm, 1 high | 0 low], ...]}``. Stations
 without tides (``kind: none``, or missing from the constants) get no file and are listed in
 ``tides/index.json``.
@@ -94,7 +94,8 @@ def _table(job: tuple) -> tuple[str, dict]:
     constants = _STATIONS
     turns = station_turns(entry, constants, start, end)
     rows = [[round((t - start).total_seconds() / 60), round(h * 100), 1 if k == "high" else 0] for t, h, k in turns]
-    return rec["path"], {"v": 1, "id": rec["id"], "source": _source(rec["id"], entry, constants), "donor": donor,
+    return rec["path"], {"v": 1, "id": rec["id"], "name": rec.get("name"), "tz": rec.get("timezone") or "UTC",
+                         "source": _source(rec["id"], entry, constants), "donor": donor,
                          "datum": "MSL", "from": _iso(start), "to": _iso(end), "turns": rows}
 
 

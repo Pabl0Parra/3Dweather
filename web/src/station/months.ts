@@ -2,7 +2,7 @@
 import { addDays, localMidnight, type Turn, type Unit } from "./format";
 
 export type TideTable = {
-  v: 1; id: string; source: string; donor: string | null; datum: string;
+  v: 1; id: string; name?: string; tz?: string; source: string; donor: { name: string; path: string } | string | null; datum: string;
   from: string; to: string; turns: [number, number, 0 | 1][];
 };
 export type MonthTurn = { date: string; hm: string; h: number; hi: boolean };

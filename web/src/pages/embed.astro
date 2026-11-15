@@ -1,0 +1,36 @@
+---
+// The embed builder: choose a place and options, preview the widget, copy the iframe code.
+import SiteLayout from "../components/SiteLayout.astro";
+---
+<SiteLayout title="Embed a tide widget · 3Dweather" path="/embed"
+  description="Put a free tide times widget for any coastal place on your own website.">
+  <div class="embed-builder" data-embed>
+    <h1>Embed a tide widget</h1>
+    <p class="lede">Today's high and low tides and a tide chart for any place, on your own site. Free, no sign-up.</p>
+
+    <h2>1. Choose a place</h2>
+    <label class="search-label" for="embed-search">Search tide stations and places</label>
+    <input id="embed-search" class="filter" type="search" autocomplete="off" placeholder="Town, harbour or gauge" data-embed-search />
+    <ul class="embed-results" data-embed-results></ul>
+    <p><strong>Place:</strong> <span data-embed-chosen>No place chosen yet.</span></p>
+
+    <h2>2. Options</h2>
+    <div class="embed-opts">
+      <label>Heights <select data-opt="unit"><option value="m">metres</option><option value="ft">feet</option></select></label>
+      <label>Theme <select data-opt="theme"><option value="dark">dark</option><option value="light">light</option></select></label>
+      <label>Days <select data-opt="days"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+    </div>
+
+    <h2>3. Preview and code</h2>
+    <iframe class="embed-preview" data-embed-preview title="Widget preview" width="100%" height="320" loading="lazy"></iframe>
+    <label class="search-label" for="embed-code">Paste this into your page</label>
+    <textarea id="embed-code" class="embed-code" rows="4" readonly data-embed-code></textarea>
+    <p><button type="button" class="btn" data-embed-copy>Copy code</button> <span class="near-status" data-embed-status aria-live="polite"></span></p>
+    <p class="lede">The widget updates itself every day. Tides are predictions, not for navigation; please keep the credit link.</p>
+  </div>
+</SiteLayout>
+<script>
+  import { mountBuilder } from "../embed/builder";
+  const root = document.querySelector<HTMLElement>("[data-embed]");
+  if (root) mountBuilder(root);
+</script>

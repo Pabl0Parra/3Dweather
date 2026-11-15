@@ -1,0 +1,21 @@
+---
+// The embeddable tide widget (shown inside other sites' iframes). Options come from the query string.
+import "../../styles/embed.css";
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Tide times · 3Dweather widget</title>
+  </head>
+  <body>
+    <main class="widget" data-widget><p class="w-msg">Loading tide times…</p></main>
+    <script>
+      import { mountWidget } from "../../embed/widget";
+      const root = document.querySelector<HTMLElement>("[data-widget]");
+      if (root) mountWidget(root);
+    </script>
+  </body>
+</html>
