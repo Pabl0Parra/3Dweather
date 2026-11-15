@@ -255,7 +255,7 @@ def test_cli_prune_is_opt_in(tmp_path, monkeypatch):
     monkeypatch.setattr("pipeline.__main__.build_run", lambda run, cache, out, **kw: seen.append(kw) or out)
     main(["build", "--run", "2026111306", "--cache", str(tmp_path), "--out", str(tmp_path)])
     main(["build", "--run", "2026111306", "--cache", str(tmp_path), "--out", str(tmp_path), "--prune"])
-    assert seen == [{"prune": False}, {"prune": True}]
+    assert [k["prune"] for k in seen] == [False, True] and all(k.get("stations") is None for k in seen)
 
 
 
