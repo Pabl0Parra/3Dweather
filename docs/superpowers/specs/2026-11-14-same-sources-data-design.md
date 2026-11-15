@@ -394,6 +394,10 @@ These cannot be matched from outside; each is our own rule, documented as such.
     index with pages, places and station files (40,000 URLs per file), and
     `robots.txt`. The site address comes from the `SITE_URL` variable.
   - Full build: 26,261 pages in 4 min 47 s.
+- **Phase 11 results (2026-11-15, embed widget).** `/embed/tide?station=…&unit=&theme=&days=`
+  draws the place's highs and lows for 1-3 days and today's chart in the station's
+  zone from `tides/{path}.json` (the tables now carry `name` and `tz`). `/embed`
+  builds the `<iframe>` code with a live preview; station pages link to it.
 - **Tide test.** New York City, November 2026: our high and low waters against
   the captured station data, within 2 minutes and 2 cm. The reference site's
   own FES-vs-NOAA comparison gives the expected error for FES stations.

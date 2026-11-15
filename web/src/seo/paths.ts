@@ -6,7 +6,7 @@ import { loadStations } from "../stations/catalogue";
 import { stationChunks } from "./sitemap";
 
 export const STATIC_PATHS = ["/", "/stations", "/guides", "/what-is-a-tide", "/tidal-coefficient", "/solunar-times",
-  "/about", "/privacy", "/terms"];
+  "/about", "/privacy", "/terms", "/embed"];
 
 export function pagePaths(): string[] {
   return [...STATIC_PATHS, ...LAYER_IDS.map((id) => LAYERS[id].path),

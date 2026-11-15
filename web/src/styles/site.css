@@ -45,3 +45,11 @@ details.continent summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 
 .article { max-width: 720px; }
 .article h2 { margin-top: 24px; }
+
+.embed-results { list-style: none; padding: 0; margin: 0 0 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.embed-opts { display: flex; flex-wrap: wrap; gap: 12px; }
+.embed-opts select { margin-left: 4px; padding: 4px; background: #060d1a; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; }
+.embed-preview { display: block; max-width: 420px; border: 0; border-radius: 12px; background: #060d1a; margin: 8px 0; }
+.embed-code { width: 100%; max-width: 640px; font: 12px/1.4 ui-monospace, Consolas, monospace; background: #060d1a; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.search-label { display: block; font-size: 13px; color: var(--dim); margin: 4px 0; }

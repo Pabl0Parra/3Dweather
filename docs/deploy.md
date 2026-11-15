@@ -194,6 +194,7 @@ GitHub runner or the public bucket. Until you supply it, places use EOT20.
 | `_astro/*` | `public, max-age=31536000, immutable` |
 | `catalogue/*` | `public, max-age=86400` |
 | `tides/*` | `public, max-age=86400` |
+| `embed/tide` (widget page) | `public, max-age=3600` (reads `tides/*` in the browser) |
 | `wx/latest.json` | `public, max-age=60` |
 | `wx/<YYYYMMDDHH>/*` | `public, max-age=2592000, immutable` |
 | `assets/globe/*` | `public, max-age=604800` |
