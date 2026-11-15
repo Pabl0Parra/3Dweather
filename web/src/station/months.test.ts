@@ -49,3 +49,12 @@ describe("a day from the tide table (visitor's today outside the embedded month)
     expect(d.around.map((x) => x[1])).toEqual([-60, 300, 660]);
   });
 });
+
+describe("elapsed minutes", () => {
+  it("counts real minutes since local midnight, across a DST change", async () => {
+    const { minutesSinceMidnight } = await import("./format");
+    // 2026-03-08: New York springs forward at 02:00; 15:00 EDT is 840 real minutes after midnight.
+    expect(minutesSinceMidnight("America/New_York", "2026-03-08", new Date("2026-03-08T19:00:00Z"))).toBe(840);
+    expect(minutesSinceMidnight("America/New_York", "2026-03-09", new Date("2026-03-09T19:00:00Z"))).toBe(900);
+  });
+});

@@ -86,3 +86,8 @@ export function skyFacts(d: StationDay): Record<string, string> {
     golden: d.golden.map(span).join(", ") || "–",
   };
 }
+
+/** Real minutes elapsed since local midnight of `date` (the chart's x-axis; differs from the clock on DST days). */
+export function minutesSinceMidnight(tz: string, date: string, now: Date): number {
+  return Math.round((now.getTime() - localMidnight(tz, date)) / 60000);
+}

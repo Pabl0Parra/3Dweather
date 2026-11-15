@@ -1,7 +1,7 @@
 // The embeddable tide widget: options from the query string, data from tides/{path}.json, drawn in
 // the station's own time zone. Every string from the URL or the file goes in with textContent.
 import { chartPath } from "../station/chart";
-import { addDays, dayLabel, height, localDate } from "../station/format";
+import { addDays, dayLabel, height, localDate, minutesSinceMidnight } from "../station/format";
 import { dayFromTable, type TideTable } from "../station/months";
 import { parseParams } from "./params";
 
@@ -22,10 +22,10 @@ function svg(name: string, attrs: Record<string, string | number>): SVGElement {
   return n;
 }
 
-function wallMinutes(tz: string, now: Date): number {
-  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
-    .formatToParts(now).map((x) => [x.type, x.value]));
-  return Number(p.hour) * 60 + Number(p.minute);
+/** The zone if this browser knows it, else UTC (older browsers lack newer IANA names). */
+function knownZone(tz: string | undefined): string {
+  if (!tz) return "UTC";
+  try { new Intl.DateTimeFormat("en", { timeZone: tz }); return tz; } catch { return "UTC"; }
 }
 
 export async function mountWidget(root: HTMLElement): Promise<void> {
@@ -40,11 +40,21 @@ export async function mountWidget(root: HTMLElement): Promise<void> {
     table = r.ok ? ((await r.json()) as TideTable) : null;
   } catch { table = null; }
   if (!table) { msg("No tide table for this place."); return; }
+  try {
+    render(root, o.station, o.unit, table, msg);
+  } catch {
+    msg("Tide times are unavailable right now.");
+  }
+}
 
-  const tz = table.tz || "UTC";
+function render(root: HTMLElement, station: string, unit: "m" | "ft", table: TideTable, msg: (t: string) => void): void {
+  if (!Array.isArray(table.turns) || !table.from) throw new Error("not a tide table");
+  const o = { station, unit, days: parseParams(location.search).days };
+  const tz = knownZone(table.tz);
   const name = table.name || o.station.split("/").pop()!;
   const today = localDate(tz, new Date());
-  const days = Array.from({ length: o.days }, (_, k) => dayFromTable(table!, addDays(today, k), tz));
+  const days = Array.from({ length: o.days }, (_, k) => dayFromTable(table, addDays(today, k), tz));
+  if (days.every((d) => !d.tides.length)) { msg("No tide times for today yet."); return; }
 
   const head = el("p", "w-name");
   const link = el("a", undefined, name);
@@ -73,7 +83,7 @@ export async function mountWidget(root: HTMLElement): Promise<void> {
   const { path } = chartPath(d0, null, d0.around, { w: W, h: H, lo: lo - pad, hi: hi + pad });
   const chart = svg("svg", { class: "w-chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `Tide height today at ${name}` });
   chart.append(svg("path", { class: "area", d: `${path}L${W},${H}L0,${H}Z` }), svg("path", { class: "curve", d: path }));
-  const x = (Math.min(d0.day_minutes, wallMinutes(tz, new Date())) / d0.day_minutes) * W;
+  const x = (Math.max(0, Math.min(d0.day_minutes, minutesSinceMidnight(tz, d0.date, new Date()))) / d0.day_minutes) * W;
   chart.append(svg("line", { class: "now", x1: x, x2: x, y1: 0, y2: H }));
 
   const zone = el("p", "w-zone", `Local time (${tz})`);

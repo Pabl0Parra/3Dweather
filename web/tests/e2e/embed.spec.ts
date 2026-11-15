@@ -81,3 +81,26 @@ test("station pages with tides link to the builder for their place", async ({ pa
   await page.goto("/us/new-york/new-york-city");
   await expect(page.locator("[data-embed-link]")).toHaveAttribute("href", "/embed?station=us/new-york/new-york-city");
 });
+
+test.describe("widget failures", () => {
+  test("a broken table body shows a message, not a spinner", async ({ page }) => {
+    await page.route("**/tides/us/new-york/broken.json", (r) => r.fulfill({ json: { v: 1, name: "Broken" } }));
+    await page.goto("/embed/tide?station=us/new-york/broken");
+    await expect(page.locator(".w-msg")).toContainText("unavailable");
+  });
+
+  test("an unknown time zone falls back to UTC", async ({ page }) => {
+    await routeTable(page, "us/new-york/odd-zone", { name: "Odd Zone", tz: "Mars/Olympus_Mons" });
+    await page.goto("/embed/tide?station=us/new-york/odd-zone");
+    await expect(page.locator(".w-name a")).toHaveText("Odd Zone");
+    await expect(page.locator(".w-zone")).toContainText("UTC");
+  });
+
+  test("a table that has run out says so", async ({ page }) => {
+    await page.route("**/tides/us/new-york/old.json", (r) => r.fulfill({ json: {
+      v: 1, id: "o", name: "Old", tz: "UTC", source: "t", donor: null, datum: "MSL",
+      from: "2020-01-01T00:00:00Z", to: "2020-02-01T00:00:00Z", turns: [[0, 50, 1], [372, -50, 0]] } }));
+    await page.goto("/embed/tide?station=us/new-york/old");
+    await expect(page.locator(".w-msg")).toContainText("No tide times for today yet");
+  });
+});
