@@ -57,6 +57,27 @@ test.describe("station data", () => {
     await expect(page.locator(".st-sky")).toContainText("Sunrise");
   });
 
+  test("the chart is drawn, a picked day redraws it and the unit switch changes heights", async ({ page }) => {
+    await page.goto("/us/new-york/new-york-city");
+    const curve = page.locator("svg[data-chart] path[data-curve]");
+    await expect(curve).toHaveCount(1);
+    const before = await curve.getAttribute("d");
+    expect(before!.split("L").length).toBeGreaterThan(100);
+    await expect(page.locator("svg[data-chart] [data-now]")).toHaveCount(1);
+    const other = page.locator(".st-month tbody tr:not(.today) button[data-pick]").first();
+    const label = (await other.textContent())!;
+    await other.click();
+    await expect(page.locator("[data-day-label]")).toHaveText(label);
+    await expect.poll(() => curve.getAttribute("d")).not.toBe(before);
+    await expect(page.locator("svg[data-chart] [data-now]")).toHaveCount(0);
+    await expect(page.locator(".st-turns li span").first()).toContainText(" m");
+    await page.locator("button[data-unit=ft]").click();
+    await expect(page.locator(".st-turns li span").first()).toContainText(" ft");
+    await expect(page.locator(".st-month tbody span[data-h]").first()).toContainText(" ft");
+    await page.reload();
+    await expect(page.locator(".st-turns li span").first()).toContainText(" ft"); // remembered
+  });
+
   test("a place without tides says so", async ({ page }) => {
     test.skip(!hasData("us/north-carolina/jacksonville"), "no-tide station data missing");
     await page.goto("/us/north-carolina/jacksonville");
