@@ -63,7 +63,7 @@ const json = data ? JSON.stringify({ ...data, path: s.path, cc: s.country_code.t
   </head>
   <body>
     <header class="site-header">
-      <a class="brand" href="/wave-map">3Dweather</a>
+      <a class="brand" href="/">3Dweather</a>
       <nav class="layer-tabs" aria-label="Maps">
         <a href={globe}>Globe</a>
         {map && <a href={`/weather-map/${map.slug}`}>Regional</a>}
@@ -199,6 +199,10 @@ const json = data ? JSON.stringify({ ...data, path: s.path, cc: s.country_code.t
         </p>
       )}
       <p class="credits">Places: <a href="https://www.geonames.org/">GeoNames</a> (CC BY 4.0) · Tide stations: NOAA CO-OPS (public domain; not NOAA's official predictions) · Tide model: EOT20 (DGFI-TUM, CC BY 4.0) · Sun and moon: JPL DE421</p>
+      <footer class="st-footer">
+        <a href="/">Home</a> · <a href="/stations">All places</a> · <a href="/guides">Guides</a> ·
+        <a href="/about">About</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
+      </footer>
     </main>
     {data && <script type="application/json" id="st-data" set:html={json}></script>}
     {data && <script>import "../../../station/page";</script>}

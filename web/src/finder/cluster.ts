@@ -24,3 +24,8 @@ export function clusterPoints(points: Point[], zoom: number, cellPx = 60): Clust
     ? { lat: c.first.lat, lon: c.first.lon, n: 1, name: c.first.name, path: c.first.path }
     : { lat: c.lat / c.n, lon: c.lon / c.n, n: c.n }));
 }
+
+/** The same longitude on the world copy nearest `center` (Leaflet lets the view run past ±180). */
+export function wrapNear(lon: number, center: number): number {
+  return lon + 360 * Math.round((center - lon) / 360);
+}

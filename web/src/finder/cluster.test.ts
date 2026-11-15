@@ -22,3 +22,13 @@ describe("finder clustering", () => {
     expect(z12.reduce((a, c) => a + c.n, 0)).toBe(200);
   });
 });
+
+describe("world copies", () => {
+  it("moves a longitude onto the world copy nearest the map centre", async () => {
+    const { wrapNear } = await import("./cluster");
+    expect(wrapNear(-178, 178)).toBe(182);
+    expect(wrapNear(178, -178)).toBe(-182);
+    expect(wrapNear(10, 370)).toBe(370);
+    expect(wrapNear(-74, -60)).toBe(-74);
+  });
+});

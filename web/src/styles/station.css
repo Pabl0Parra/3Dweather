@@ -55,3 +55,5 @@
 .st-faq details { border-bottom: 1px solid var(--line); padding: 6px 0; }
 .st-faq summary { cursor: pointer; font-weight: 600; }
 .st-faq p { margin: 6px 0 0; color: var(--dim); }
+.st-footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; color: var(--dim); }
+.st-footer a { color: var(--ink); }

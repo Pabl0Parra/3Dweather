@@ -14,6 +14,7 @@ const total = countries.reduce((a, c) => a + c.count, 0);
   <h1>All places</h1>
   <p class="lede">{total ? `${total.toLocaleString("en")} tide stations and coastal places in ${countries.length} countries.` : "Tide stations and coastal places worldwide."} Zoom in on the map or pick a country.</p>
   <div class="finder-map" data-finder role="region" aria-label="Map of places"></div>
+  <p class="near-status" data-finder-status aria-live="polite"></p>
   {groups.map((g) => (
     <section>
       <h2>{g.name}</h2>
@@ -26,5 +27,5 @@ const total = countries.reduce((a, c) => a + c.count, 0);
 <script>
   import { mountFinder } from "../finder/map";
   const el = document.querySelector<HTMLElement>("[data-finder]");
-  if (el) mountFinder(el);
+  if (el) mountFinder(el, document.querySelector<HTMLElement>("[data-finder-status]"));
 </script>
