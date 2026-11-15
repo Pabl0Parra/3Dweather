@@ -1,0 +1,23 @@
+---
+import SiteLayout from "../components/SiteLayout.astro";
+---
+<SiteLayout title="Solunar times · 3Dweather" path="/solunar-times" nav="guides"
+  description="The major and minor solunar periods shown on station pages, and how they are worked out.">
+  <article class="article">
+    <h1>Solunar times</h1>
+    <p class="lede">Periods of the day tied to the Moon's position, which many anglers plan around.</p>
+    <h2>The idea</h2>
+    <p>Solunar tables were made popular by John Alden Knight in the 1920s and 1930s. The idea is that fish and
+      game are more active when the Moon is overhead or underfoot, and to a lesser degree when it rises or sets. The
+      evidence is mixed; we show the times because people use them, not as a promise of a good catch.</p>
+    <h2>What the station pages show</h2>
+    <ul>
+      <li><strong>Major periods</strong>: two hours centred on the Moon passing overhead (its highest point in the
+        sky) and underfoot (its lowest point, on the other side of the Earth).</li>
+      <li><strong>Minor periods</strong>: one hour centred on moonrise and on moonset.</li>
+    </ul>
+    <p>All times are worked out for the station's own position and time zone from the JPL DE421 ephemeris, the
+      same data behind the sunrise, sunset and moon times on each page. On days when the Moon does not rise or set,
+      there is no minor period for it.</p>
+  </article>
+</SiteLayout>
