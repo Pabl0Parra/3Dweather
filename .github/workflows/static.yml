@@ -14,7 +14,7 @@ permissions:
 jobs:
   upload:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
     env:
       R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -61,12 +61,22 @@ jobs:
             exit "$code"
           fi
       # One NOAA request per station per run is slow and impolite; responses rarely change.
-      - uses: actions/cache@v4
+      # Restored and saved separately so answers fetched before a failure or timeout are kept;
+      # the year in the key makes NOAA's updated constants come in once a year.
+      - id: epoch
+        run: echo "year=$(date -u +%Y)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
         with:
           path: noaa-cache
-          key: noaa-cache-${{ github.run_id }}
-          restore-keys: noaa-cache-
-      - run: python -m pipeline tide-constants --catalogue "$RUNNER_TEMP/catalogue/stations.json" --noaa "$RUNNER_TEMP/catalogue-inputs/noaa-tidepredictions.json" --noaa-cache noaa-cache --model "$RUNNER_TEMP/models/fes2022.json" --model "$RUNNER_TEMP/models/eot20.json" --out "$RUNNER_TEMP/tide-constants/tide-constants.json"
+          key: noaa-cache-${{ steps.epoch.outputs.year }}-${{ github.run_id }}
+          restore-keys: noaa-cache-${{ steps.epoch.outputs.year }}-
+      - id: noaa
+        run: python -m pipeline tide-constants --catalogue "$RUNNER_TEMP/catalogue/stations.json" --noaa "$RUNNER_TEMP/catalogue-inputs/noaa-tidepredictions.json" --noaa-cache noaa-cache --model "$RUNNER_TEMP/models/fes2022.json" --model "$RUNNER_TEMP/models/eot20.json" --out "$RUNNER_TEMP/tide-constants/tide-constants.json"
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: noaa-cache
+          key: noaa-cache-${{ steps.epoch.outputs.year }}-${{ github.run_id }}
       # FES2022's licence covers our use, not passing its numbers on: with a private bucket the
       # constants live there (the Tides workflow reads them from it); otherwise they are EOT20
       # and NOAA only (CC BY 4.0 and public domain) and go next to the catalogue.

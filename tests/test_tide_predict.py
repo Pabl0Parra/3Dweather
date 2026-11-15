@@ -135,3 +135,23 @@ def test_curve_passes_through_turns_and_is_monotonic_between():
     assert np.all(np.diff(c) <= 1e-12) if a[2] == "high" else np.all(np.diff(c) >= -1e-12)
     outside = curve(turns, t64([turns[0][0] - timedelta(hours=1)]))
     assert np.isnan(outside[0])
+
+
+def test_additive_subordinate_matches_noaa_on_mllw():
+    """9414539 from 9414290 with additive ("F") offsets, as NOAA gives them with units=metric."""
+    o = json.loads((FIX / "9414539-offsets-metric.json").read_text(encoding="utf-8"))
+    h = json.loads((FIX / "9414290-harcon.json").read_text(encoding="utf-8"))
+    cons = [(c["name"], c["amplitude"], c["phase_GMT"]) for c in h["HarmonicConstituents"] if c["amplitude"]]
+    dat = {x["name"]: x["value"] for x in json.loads((FIX / "9414290-datums.json").read_text(encoding="utf-8"))["datums"]}
+    D = dat["MSL"] - dat["MLLW"]
+    ref = extrema(datetime(2026, 10, 31, tzinfo=UTC), datetime(2026, 11, 4, tzinfo=UTC), cons)
+    off = Offsets(o["timeOffsetHighTide"], o["timeOffsetLowTide"], o["heightOffsetHighTide"], o["heightOffsetLowTide"],
+                  o["heightAdjustedType"])
+    mean_a = (off.height_high + off.height_low) / 2  # our MSL rule removes it; NOAA's MLLW heights keep it
+    got = [(t, x + mean_a, k) for t, x, k in subordinate([(t, x + D, k) for t, x, k in ref], off, 0.0)]
+    want = noaa("9414539-hilo-mllw-2026-11-01.json")
+    got = [x for x in got if want[0][0] - timedelta(minutes=5) <= x[0] <= want[-1][0] + timedelta(minutes=5)]
+    assert len(got) == len(want)
+    for (t, hv, k), (wt, wh, wk) in zip(got, want):
+        assert k == ("high" if wk == "H" else "low")
+        assert abs((t - wt).total_seconds()) <= 119 and abs(hv - wh) <= 0.02, (t, hv, wt, wh)

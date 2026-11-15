@@ -32,7 +32,9 @@ def test_polar_night_and_midnight_sun_are_null(sky):
     assert dec["dawn"] is not None  # civil twilight still happens at noon
     jun = sky_days(*TROMSO, date(2026, 6, 21), 1, sky)[0]
     assert jun["sunrise"] is None and jun["sunset"] is None and jun["day_length_h"] == 24
-    assert jun["dawn"] is None and jun["dusk"] is None and jun["golden"] == [] and jun["blue"] == []
+    assert jun["dawn"] is None and jun["dusk"] is None and jun["blue"] == []
+    # The midnight sun stays above 3°: golden around midnight, not all day.
+    assert jun["golden"] and jun["golden"][0][0][1] == 0 and jun["golden"][-1][1][1] == jun["day_minutes"]
 
 
 def test_dst_end_day_is_25_hours_and_times_are_local(sky):
@@ -108,3 +110,39 @@ def test_new_york_matches_the_capture(sky):
     print("worst differences:", worst)
     assert worst["sun"] <= 1 and worst["moon"] <= 2 and worst["illum"] <= 1
     assert worst["coef"] <= 8
+
+
+REYKJAVIK = (64.1466, -21.9426, "Atlantic/Reykjavik")
+UTQIAGVIK = (71.2906, -156.7887, "America/Anchorage")
+
+
+def _check_bands(d):
+    for band in ("golden", "blue"):
+        spans = [(a[1], b[1]) for a, b in d[band]]
+        assert spans == sorted(spans) and len(set(spans)) == len(spans), (d["date"], band, spans)
+        assert all(0 <= a < b <= d["day_minutes"] for a, b in spans), (d["date"], band, spans)
+        assert all(b1 <= a2 for (_, b1), (a2, _) in zip(spans, spans[1:])), (d["date"], band, spans)
+        assert len(spans) <= 3, (d["date"], band, spans)
+
+
+def test_golden_hour_when_the_sun_never_reaches_6_degrees(sky):
+    d = sky_days(*REYKJAVIK, date(2027, 1, 20), 1, sky)[0]
+    _check_bands(d)
+    assert len(d["golden"]) == 1  # one stretch around noon, low sun all day
+    assert d["golden"][0][0][1] < d["sunrise"][1] and d["golden"][0][1][1] > d["sunset"][1]
+    assert len(d["blue"]) == 2
+
+
+def test_bands_when_the_sun_stays_below_the_horizon_or_never_sets_deep(sky):
+    dec = sky_days(*UTQIAGVIK, date(2026, 12, 1), 1, sky)[0]
+    _check_bands(dec)
+    assert dec["sunrise"] is None and len(dec["blue"]) >= 1
+    may = sky_days(*TROMSO, date(2026, 5, 10), 1, sky)[0]  # sun never below -4°
+    _check_bands(may)
+    assert may["blue"] == [] and len(may["golden"]) >= 1
+
+
+def test_bands_are_sane_every_day_of_a_year_at_64_and_70_north(sky):
+    for place in (REYKJAVIK, TROMSO):
+        for d in sky_days(*place, date(2026, 1, 1), 365, sky):
+            _check_bands(d)

@@ -207,7 +207,7 @@ def _drop_ripples(turns: list[list]) -> list[list]:
 
 @dataclass(frozen=True)
 class Offsets:
-    """NOAA tide-prediction offsets: minutes, and height ratios ("R") or additions in metres ("A")."""
+    """NOAA tide-prediction offsets: minutes, and height ratios ("R") or additions in metres (NOAA's "F", asked for in metric units)."""
     time_high_min: float
     time_low_min: float
     height_high: float

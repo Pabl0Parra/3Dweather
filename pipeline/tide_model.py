@@ -111,6 +111,6 @@ def sample_model(records: list[dict], reader: ModelReader) -> dict[str, list | N
         a = drop_artifacts(a)
         av, gv = a[rows, cols], g[rows, cols]
         for (sid, _), x, y in zip(picks, av, gv):
-            if np.isfinite(x):
+            if np.isfinite(x) and np.isfinite(y):
                 out[sid].append([reader.names[f], round(float(x), 4), round(float(y) % 360.0, 1)])
     return {sid: (v if v else None) for sid, v in out.items()}

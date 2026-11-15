@@ -44,9 +44,14 @@ def _get(url: str, dest: Path, fetch: Callable[[str, Path], None], failed: list[
             failed.append(f"{url}: {exc}")
             return None
     try:
-        return json.loads(dest.read_text(encoding="utf-8"))
+        body = json.loads(dest.read_text(encoding="utf-8"))
     except (OSError, ValueError):
+        body = None
+    if not isinstance(body, dict) or "error" in body:  # an error page or a broken answer: not data
+        dest.unlink(missing_ok=True)
+        failed.append(f"{url}: {str(body)[:200]}")
         return None
+    return body
 
 
 def noaa_stations(path: Path) -> list[dict]:
@@ -94,7 +99,8 @@ def fetch_noaa(stations: list[dict], cache: Path, fetch: Callable[[str, Path], N
     def one(st: dict) -> tuple[str, dict]:
         sid = str(st["id"])
         if st["type"] == "S":
-            o = _get_counted(f"{API}/{sid}/tidepredoffsets.json", cache / f"{sid}-offsets.json") or {}
+            # units=metric: additive ("F") offsets otherwise come in feet
+            o = _get_counted(f"{API}/{sid}/tidepredoffsets.json?units=metric", cache / f"{sid}-offsets-m.json") or {}
             if not o.get("refStationId"):
                 return sid, {"type": "S", "offsets": None}
             return sid, {"type": "S", "offsets": {

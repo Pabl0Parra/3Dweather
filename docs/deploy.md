@@ -67,7 +67,8 @@ The token from step 2 needs read and write access to the private bucket too.
    a nearby NOAA station's tide for places within 5 km of one, and the global
    tide model (EOT20, or FES2022 where you have supplied it) everywhere else.
    NOAA is asked one request at a time; the first run makes about 4,700
-   requests (about 45 minutes) and later runs reuse the cached answers. If NOAA
+   requests (about an hour) and later runs reuse the cached answers, which are
+   kept even when a run fails and refreshed once a year. If NOAA
    refuses requests the job fails rather than publish constants with NOAA
    stations on the model; run it again later and it carries on from the cache.
    Without a private bucket the file goes to `catalogue/tide-constants.json`;

@@ -31,6 +31,8 @@ AGE_H = 0.0
 
 # Moonrise and moonset: the centre of the moon at the horizon after standard refraction (34′).
 MOON_HORIZON = -0.5667
+SNAP_S = 480.0  # golden/blue ends within 8 min of an exact crossing take its time
+SAMPLE_MIN = 5
 MOON_MEAN_KM = 385000.6
 SUN_MEAN_KM = 149598023.0
 
@@ -88,6 +90,44 @@ def sky_days(lat: float, lon: float, tz: str, first: date, n: int, sky: Sky) -> 
     moon_transit = _times(sky, almanac.find_transits(obs, moon, t0, t1))
     moon_anti = _times(sky, almanac.find_transits(anti, moon, t0, t1))
 
+    # Golden (-4°..6°) and blue (-6°..-4°) hours: runs of SAMPLE_MIN-minute altitude samples inside each
+    # band, so a sun that never leaves a band (polar winter, white nights) gives one long run.
+    # Each end snaps to the exact crossing found above when there is one within SNAP.
+    step = SAMPLE_MIN / 1440.0
+    start_t = ts.from_datetime(edges[0])
+    n_samp = int(round((edges[-1] - edges[0]).total_seconds() / (60.0 * SAMPLE_MIN))) + 1
+    grid = ts.tt_jd(start_t.tt + np.arange(n_samp) * step)
+    alt = obs.at(grid).observe(sun).apparent().altaz()[0].degrees
+    sample_t = [edges[0] + timedelta(minutes=SAMPLE_MIN * k) for k in range(n_samp)]
+    crossings = {h: sorted(up[h] + down[h]) for h in (-6.0, -4.0, 6.0)}
+
+    def band(lo: float, hi: float) -> list[tuple[datetime, datetime]]:
+        inside = (alt >= lo) & (alt < hi)
+        runs, k = [], 0
+        while k < n_samp:
+            if not inside[k]:
+                k += 1
+                continue
+            j = k
+            while j + 1 < n_samp and inside[j + 1]:
+                j += 1
+            runs.append((_cross(k - 1, k, lo, hi) if k > 0 else sample_t[0],
+                         _cross(j, j + 1, lo, hi) if j + 1 < n_samp else sample_t[-1]))
+            k = j + 1
+        return runs
+
+    def _cross(i: int, j: int, lo: float, hi: float) -> datetime:
+        """Time the altitude crosses lo or hi between samples i and j (exact event if close)."""
+        h = lo if min(alt[i], alt[j]) < lo <= max(alt[i], alt[j]) else hi
+        w = (h - alt[i]) / (alt[j] - alt[i]) if alt[j] != alt[i] else 0.0
+        guess = sample_t[i] + timedelta(minutes=SAMPLE_MIN * float(w))
+        ev = crossings[h]
+        k = bisect_left(ev, guess)
+        near = [e for e in ev[max(0, k - 1):k + 1] if abs((e - guess).total_seconds()) <= SNAP_S]
+        return min(near, key=lambda e: abs((e - guess).total_seconds())) if near else guess
+
+    golden_runs, blue_runs = band(-4.0, 6.0), band(-6.0, -4.0)
+
     # Is the sun up at each local midnight (for the length of day)?
     mid = ts.from_datetimes(edges)
     alt0 = obs.at(mid).observe(sun).apparent().altaz()[0].degrees
@@ -111,15 +151,13 @@ def sky_days(lat: float, lon: float, tz: str, first: date, n: int, sky: Sky) -> 
             k = bisect_left(xs, a)
             return at(xs[k]) if k < len(xs) and xs[k] < b else None
 
-        def intervals(starts, ends):
+        def within(runs):
             res = []
-            for s in starts:
-                k = bisect_left(ends, s)
-                if k == len(ends):
-                    continue
-                e = ends[k]
-                if e > a and s < b:
-                    res.append([at(max(s, a)), at(min(e, b))])
+            for s0, e0 in runs:
+                if e0 > a and s0 < b:
+                    x, y = at(max(s0, a)), at(min(e0, b))
+                    if y[1] > x[1]:
+                        res.append([x, y])
             return res
 
         def around(xs, half_min):
@@ -143,8 +181,8 @@ def sky_days(lat: float, lon: float, tz: str, first: date, n: int, sky: Sky) -> 
             "day_minutes": span,
             "sunrise": rise, "sunset": sett, "transit": first_in(sun_transit),
             "dawn": first_in(up[-6.0]), "dusk": first_in(down[-6.0]),
-            "golden": intervals(up[-4.0], up[6.0]) + intervals(down[6.0], down[-4.0]),
-            "blue": intervals(up[-6.0], up[-4.0]) + intervals(down[-4.0], down[-6.0]),
+            "golden": within(golden_runs),
+            "blue": within(blue_runs),
             "day_length_h": round(above / 3600.0, 2),
             "moon": {
                 "phase_angle": round(float(phase_deg[i]) % 360.0, 1),
@@ -158,9 +196,6 @@ def sky_days(lat: float, lon: float, tz: str, first: date, n: int, sky: Sky) -> 
                 "minor": sorted(around(moonrise, 30) + around(moonset, 30), key=lambda p: p[0][1]),
             },
         })
-    for o in out:
-        o["golden"].sort(key=lambda p: p[0][1])
-        o["blue"].sort(key=lambda p: p[0][1])
     return out
 
 

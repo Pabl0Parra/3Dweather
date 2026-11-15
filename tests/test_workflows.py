@@ -71,7 +71,12 @@ def test_static_builds_tide_constants_with_fes2022_kept_private():
     assert "python -m pipeline model-constants --catalogue" in t
     assert "python -m pipeline tide-constants --catalogue" in t
     # NOAA's per-station responses are cached between runs.
-    assert "path: noaa-cache" in t and "restore-keys: noaa-cache-" in t
+    assert "path: noaa-cache" in t
+    # Saved even when the run fails or times out, so a rerun carries on; refreshed once a year.
+    assert "actions/cache/restore@v4" in t and "actions/cache/save@v4" in t and "if: always()" in t
+    assert "restore-keys: noaa-cache-${{ steps.epoch.outputs.year }}-" in t
+    import re
+    assert int(re.search(r"timeout-minutes: (\d+)", t).group(1)) >= 150  # first NOAA run alone is ~60 min
     # FES2022 constants come only from the optional private bucket, and anything built from them stays there.
     assert "R2_PRIVATE_BUCKET: ${{ secrets.R2_PRIVATE_BUCKET }}" in t
     assert 'python -m pipeline get --key fes2022/model-constants.json' in t and '--store "r2:$R2_PRIVATE_BUCKET"' in t

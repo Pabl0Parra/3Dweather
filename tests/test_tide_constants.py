@@ -259,3 +259,32 @@ def test_fetch_noaa_keeps_only_constituents_the_engine_knows(tmp_path):
         dest.write_text(json.dumps(body), encoding="utf-8")
     got = fetch_noaa([{"id": "9455920", "type": "R"}], tmp_path, fetch=extra, pause=0)
     assert [c[0] for c in got["9455920"]["cons"]] == ["M2", "S2"]
+
+
+def test_fetch_noaa_asks_for_offsets_in_metres():
+    calls = []
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        fetch_noaa([{"id": "9414539", "type": "S"}], Path(d), fetch=fake_api(calls), pause=0)
+        assert calls == [f"https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/9414539/tidepredoffsets.json?units=metric"]
+        assert (Path(d) / "9414539-offsets-m.json").exists()  # not the old feet cache name
+
+
+def test_fetch_noaa_treats_an_error_body_as_a_failure(tmp_path):
+    from pipeline.tide_constants import NoaaFetchError
+
+    def err(url, dest):
+        dest.write_text(json.dumps({"error": {"message": "temporarily unavailable"}}), encoding="utf-8")
+    with pytest.raises(NoaaFetchError):
+        fetch_noaa([{"id": "1", "type": "R"}], tmp_path, fetch=err, pause=0)
+    assert not (tmp_path / "1-harcon.json").exists()  # tried again next run
+
+
+def test_a_nan_phase_drops_that_constituent(tmp_path):
+    src = write_model(tmp_path / "eot", ["M2", "S2"])
+    with h5py.File(src / "S2_ocean_eot20.nc", "r+") as f:
+        ph = f["phase"][:]
+        ph[:] = np.nan
+        f["phase"][...] = ph
+    out = sample_model([rec("g1", 10.05, 20.05)], ModelReader.eot20(src, names=["M2", "S2"]))
+    assert out["g1"] == [["M2", 0.5, 0.0]]
