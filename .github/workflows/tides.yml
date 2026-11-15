@@ -1,0 +1,57 @@
+# Monthly tide tables: high and low waters for every catalogue station, 12 months either
+# side of the current month, from tide-constants.json (built by Static assets). Uploaded to
+# tides/{path}.json with a day's cache.
+name: Tides
+
+on:
+  schedule:
+    - cron: '0 2 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tides
+  cancel-in-progress: false
+
+jobs:
+  tables:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_PRIVATE_BUCKET: ${{ secrets.R2_PRIVATE_BUCKET }}
+    steps:
+      - name: Check secrets
+        run: |
+          if [ -z "$R2_BUCKET" ]; then
+            echo "::notice::R2 secrets are not set: nothing to do (see docs/deploy.md)"
+            echo "SKIP=1" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/checkout@v4
+        if: env.SKIP != '1'
+      - uses: actions/setup-python@v5
+        if: env.SKIP != '1'
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -e ".[publish]"
+        if: env.SKIP != '1'
+      - name: Download the catalogue and the tide constants
+        if: env.SKIP != '1'
+        run: |
+          python -m pipeline get --key catalogue/stations.json --out "$RUNNER_TEMP/stations.json" --store r2
+          # With a private bucket the constants may hold FES2022 values and live there.
+          if [ -n "$R2_PRIVATE_BUCKET" ]; then
+            python -m pipeline get --key tides-private/tide-constants.json --out "$RUNNER_TEMP/tide-constants.json" --store "r2:$R2_PRIVATE_BUCKET"
+          else
+            python -m pipeline get --key catalogue/tide-constants.json --out "$RUNNER_TEMP/tide-constants.json" --store r2
+          fi
+      - if: env.SKIP != '1'
+        run: python -m pipeline tide-tables --catalogue "$RUNNER_TEMP/stations.json" --constants "$RUNNER_TEMP/tide-constants.json" --out "$RUNNER_TEMP/tides" --workers 4
+      - if: env.SKIP != '1'
+        run: python -m pipeline upload --src "$RUNNER_TEMP/tides" --prefix tides --max-age 86400 --store r2 > /dev/null

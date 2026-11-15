@@ -49,6 +49,9 @@ Repository → **Settings** → **Secrets and variables** → **Actions** →
 | `R2_ACCESS_KEY_ID` | the token's access key ID |
 | `R2_SECRET_ACCESS_KEY` | the token's secret access key |
 | `R2_BUCKET` | the bucket name, e.g. `3dweather` |
+| `R2_PRIVATE_BUCKET` | optional: a second bucket, **not** public, for FES2022 (section 7) |
+
+The token from step 2 needs read and write access to the private bucket too.
 
 ## 4. First runs
 
@@ -59,7 +62,17 @@ Repository → **Settings** → **Secrets and variables** → **Actions** →
    and takes about 15 minutes. It also builds the station catalogue from the NOAA
    CO-OPS station list and GeoNames (`stations.json`, `search.json`,
    `countries.json`) and uploads it to `catalogue/`. Run it again when you want
-   a fresh catalogue, then run **Site**.
+   a fresh catalogue, then run **Site**. Last, it builds `tide-constants.json`:
+   NOAA's harmonic constants and subordinate offsets for every NOAA station,
+   a nearby NOAA station's tide for places within 5 km of one, and the global
+   tide model (EOT20, or FES2022 where you have supplied it) everywhere else.
+   NOAA is asked one request at a time; the first run makes about 4,700
+   requests (about an hour) and later runs reuse the cached answers, which are
+   kept even when a run fails and refreshed once a year. If NOAA
+   refuses requests the job fails rather than publish constants with NOAA
+   stations on the model; run it again later and it carries on from the cache.
+   Without a private bucket the file goes to `catalogue/tide-constants.json`;
+   with one it goes to `tides-private/tide-constants.json` in that bucket.
 2. **Actions** → **Forecast run** → **Run workflow** (leave the run empty).
    It builds the run that is due now and uploads it to `wx/<run>/`, then
    `wx/latest.json`. Each run folder also holds the 12 regional maps
@@ -89,6 +102,14 @@ Check it worked: `https://pub-….r2.dev/wx/latest.json` should name the run.
 
 Check it: `https://pub-….r2.dev/us/new-york/new-york-city` should show the New
 York City page.
+5. **Actions** → **Tides** → **Run workflow** (afterwards it runs by itself at
+   02:00 UTC on the 1st of each month). It downloads the catalogue and
+   `tide-constants.json`, computes high and low waters for every station from
+   12 months before the current month to 12 months after, and uploads one file
+   per station to `tides/{country}/{region}/{station}.json`, plus
+   `tides/index.json` listing the stations without tides (inland places more
+   than 20 km from model ocean). Run it again after Static assets has rebuilt the
+   constants.
 
 ## 5. Where the site is served
 
@@ -122,6 +143,30 @@ web/public/wx --latest`, `python -m pipeline static … --out
 web/public/assets/globe`, `python -m pipeline tide-atlas --eot20 eot20/eot20.zip
 --out web/public/assets/globe`).
 
+## 7. FES2022 (optional, on your own machine)
+
+FES2022 is the tide model the reference site uses; its licence (AVISO+) lets
+you use it but not pass its values on, so it never goes into the repository, a
+GitHub runner or the public bucket. Until you supply it, places use EOT20.
+
+1. Register at AVISO+, ask for the FES2022 ocean tide product, and download the
+   ocean-tide netCDF files (`m2_fes2022.nc`, `k1_fes2022.nc`, …) into one folder.
+2. Create a second R2 bucket with public access **off**, and add its name as the
+   `R2_PRIVATE_BUCKET` secret (section 3).
+3. Download the current catalogue (`catalogue/stations.json` from the public
+   bucket), then:
+
+   ```
+   python -m pip install -e ".[publish,tides]"
+   python tools/fes2022_constants.py --catalogue stations.json --fes <FES folder> --out fes/model-constants.json
+   python -m pipeline upload --src fes --prefix fes2022 --max-age 0 --store r2:<private bucket>
+   ```
+
+   (with the four `R2_*` variables set in your shell as in section 3).
+4. Run **Static assets**, then **Tides**. FES2022 now comes first at every place
+   it covers and EOT20 fills the rest. Repeat step 3 when the catalogue changes;
+   new places use EOT20 until you do.
+
 ## Files and cache lifetimes
 
 | Key | Cache-Control |
@@ -129,6 +174,7 @@ web/public/assets/globe`, `python -m pipeline tide-atlas --eot20 eot20/eot20.zip
 | pages (`us/…`, `wave-map`, …) | `public, max-age=3600` |
 | `_astro/*` | `public, max-age=31536000, immutable` |
 | `catalogue/*` | `public, max-age=86400` |
+| `tides/*` | `public, max-age=86400` |
 | `wx/latest.json` | `public, max-age=60` |
 | `wx/<YYYYMMDDHH>/*` | `public, max-age=2592000, immutable` |
 | `assets/globe/*` | `public, max-age=604800` |

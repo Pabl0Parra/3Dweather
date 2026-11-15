@@ -9,7 +9,10 @@ Status: the globe has six layers (rain and cloud, wind, temperature, waves,
 currents, tides), and 12 flat regional maps (`/weather-map/{region}` and
 `/wind-map/{region}`) show wind, rain and cloud hour by hour for three days.
 A catalogue of about 24,500 tide stations and coastal places (NOAA CO-OPS and
-GeoNames) has a search box and one page per station; tide tables come next.
+GeoNames) has a search box and one page per station. Every station has tide
+constants (NOAA, NOAA offsets, a nearby NOAA station, or the EOT20 global model)
+and a monthly 25-month table of high and low waters; sun, moon, solunar and
+tidal-coefficient data come from JPL DE421. Station pages show them next.
 Everything is built by GitHub Actions and published to Cloudflare R2.
 The design is in `docs/superpowers/specs/`; publishing setup is in
 [`docs/deploy.md`](docs/deploy.md).
@@ -18,10 +21,11 @@ The design is in `docs/superpowers/specs/`; publishing setup is in
 
 Forecast data: NOAA GFS and GFS-Wave, ECMWF IFS (CC BY 4.0) and Mercator
 (E.U. Copernicus Marine Service Information), as published by
-[Open-Meteo.com](https://open-meteo.com) (CC BY 4.0). Tides: FES2022, funded by
-CNES, produced by LEGOS, NOVELTIS and CLS, made freely available by AVISO, and
-NOAA CO-OPS harmonic constants (public domain; not NOAA's official
-predictions). Places: GeoNames (CC BY 4.0). Base map: Natural Earth and NASA
+[Open-Meteo.com](https://open-meteo.com) (CC BY 4.0). Tides: NOAA CO-OPS harmonic constants and
+offsets (public domain; not NOAA's official predictions), EOT20 (Hart-Davis et
+al. 2021, DGFI-TUM, CC BY 4.0) and, where the owner supplies it, FES2022 (funded
+by CNES, produced by LEGOS, NOVELTIS and CLS, made freely available by AVISO).
+Sun and moon: JPL DE421. Places: GeoNames (CC BY 4.0). Base map: Natural Earth and NASA
 Black Marble (public domain).
 
 ## Development
@@ -52,6 +56,18 @@ Natural Earth coastline into the inputs folder on first use):
 ```
 python -m pipeline catalogue --inputs catalogue-inputs --out web/public/catalogue
 ```
+
+Tide constants and tables (`[tides]` extra; EOT20 is the 2.3 GB zip from
+SEANOE, see `.github/workflows/static.yml`):
+
+```
+python -m pipeline model-constants --catalogue catalogue-out/stations.json --eot20 eot20/eot20.zip --out tide-out/models/eot20.json
+python -m pipeline tide-constants --catalogue catalogue-out/stations.json --noaa catalogue-inputs/noaa-tidepredictions.json     --noaa-cache noaa-cache --model tide-out/models/eot20.json --out tide-out/tide-constants.json
+python -m pipeline tide-tables --catalogue catalogue-out/stations.json --constants tide-out/tide-constants.json --out tide-out/tides
+```
+
+Sun and moon (`[sky]` extra) download JPL DE421 (17 MB) into `sky-cache/` on
+first use (`SKY_CACHE` changes the folder).
 
 The site lives in `web/` (Astro): `npm ci`, `npm run dev`, `npx vitest run`,
 `npx playwright test` (the end-to-end tests need a run built into

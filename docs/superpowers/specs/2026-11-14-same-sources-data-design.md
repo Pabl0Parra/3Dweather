@@ -358,6 +358,24 @@ These cannot be matched from outside; each is our own rule, documented as such.
   - Pages: 24,542 built in 52 s. Cloudflare Pages' free plan allows 20,000
     files per site (confirmed on its limits page), so pages go to R2 with the
     `.html` dropped from each key; no routing rule except `/` on a custom domain.
+- **Phase 8 results (2026-11-14, tides and astronomy).**
+  - Engine: NOAA's 37 constituents (plus the models' extras), nodal factors held
+    at mid-year as NOAA does. The Battery (8518750): hourly heights within
+    0.54 cm of NOAA, every November 2026 high and low within 2 min and 1 cm.
+    Williamsburg (8517921) from NOAA's offsets on the Battery: within 2 min and
+    1 cm on MLLW.
+  - Constants: 1,256 NOAA harmonic stations, 2,163 subordinate, 83 NOAA
+    stations on the model (no usable reference within 1,000 km); 1,627 places
+    take a NOAA station within 5 km, 18,487 use EOT20, 896 inland places have
+    no tides. `tide-constants.json` is 9.3 MB (1.9 MB gzip compressed). NOAA
+    refuses bursts (HTTP 403), so it is asked one request at a time.
+  - Astronomy against the captured New York City month: sunrise and sunset
+    within 1 min, moonrise and moonset within 1 min (moon centre at -0.5667°),
+    illumination within 1 %, moon names equal (45° sectors), coefficient within
+    7 points (our French-scale formula, no tide-age lag).
+  - Tide test: New York City takes the nearby NOAA station's tide under our
+    rule, and the reference uses FES2022 at the place; the test runs once the
+    owner supplies FES2022 (`tools/fes2022_constants.py`).
 - **Tide test.** New York City, November 2026: our high and low waters against
   the captured station data, within 2 minutes and 2 cm. The reference site's
   own FES-vs-NOAA comparison gives the expected error for FES stations.

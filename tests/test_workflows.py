@@ -34,6 +34,8 @@ def test_keepalive_monthly_with_write_permission():
 def test_ci_runs_both_suites():
     t = text("ci.yml")
     assert 'pytest -m "not reference"' in t and "npx vitest run" in t and "npm run build" in t
+    # The tide and sky tests run too (they skip without h5py or skyfield); DE421 is cached.
+    assert '.[dev,publish,tides,sky]' in t and "path: sky-cache" in t and "SKY_CACHE: sky-cache" in t
 
 
 def test_no_secret_values_in_workflows():
@@ -64,6 +66,24 @@ def test_static_builds_and_uploads_the_catalogue():
     assert "--prefix catalogue --max-age 86400" in t
 
 
+def test_static_builds_tide_constants_with_fes2022_kept_private():
+    t = text("static.yml")
+    assert "python -m pipeline model-constants --catalogue" in t
+    assert "python -m pipeline tide-constants --catalogue" in t
+    # NOAA's per-station responses are cached between runs.
+    assert "path: noaa-cache" in t
+    # Saved even when the run fails or times out, so a rerun carries on; refreshed once a year.
+    assert "actions/cache/restore@v4" in t and "actions/cache/save@v4" in t and "if: always()" in t
+    assert "restore-keys: noaa-cache-${{ steps.epoch.outputs.year }}-" in t
+    import re
+    assert int(re.search(r"timeout-minutes: (\d+)", t).group(1)) >= 150  # first NOAA run alone is ~60 min
+    # FES2022 constants come only from the optional private bucket, and anything built from them stays there.
+    assert "R2_PRIVATE_BUCKET: ${{ secrets.R2_PRIVATE_BUCKET }}" in t
+    assert 'python -m pipeline get --key fes2022/model-constants.json' in t and '--store "r2:$R2_PRIVATE_BUCKET"' in t
+    assert '--model "$RUNNER_TEMP/models/fes2022.json" --model "$RUNNER_TEMP/models/eot20.json"' in t
+    assert '--prefix tides-private --max-age 0 --store "r2:$R2_PRIVATE_BUCKET"' in t
+
+
 def test_site_builds_with_the_catalogue_and_publishes_changed_files():
     t = text("site.yml")
     assert "branches: [main]" in t and "workflow_dispatch:" in t
@@ -83,3 +103,14 @@ def test_site_fails_on_a_broken_catalogue_download_and_follows_static_assets():
     assert "github.event.workflow_run.conclusion == 'success'" in t
     # Exit 3 (no catalogue yet) builds without stations; any other failure stops the job.
     assert 'if [ "$code" -eq 3 ]; then' in t and 'exit "$code"' in t
+
+
+def test_tides_run_monthly_and_upload_a_day_cache():
+    t = text("tides.yml")
+    assert "cron: '0 2 1 * *'" in t and "workflow_dispatch:" in t
+    assert "python -m pipeline get --key catalogue/stations.json" in t
+    # tide-constants.json from the private bucket when there is one (FES2022), else next to the catalogue.
+    assert '--key tides-private/tide-constants.json' in t and '--store "r2:$R2_PRIVATE_BUCKET"' in t
+    assert "--key catalogue/tide-constants.json" in t
+    assert "python -m pipeline tide-tables --catalogue" in t
+    assert "--prefix tides --max-age 86400 --store r2" in t
