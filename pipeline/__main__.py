@@ -11,7 +11,7 @@ python -m pipeline get --key KEY --out FILE --store (r2|dir:PATH)
 python -m pipeline model-constants --catalogue STATIONS_JSON --eot20 ZIP_OR_DIR --out FILE
 python -m pipeline tide-constants --catalogue STATIONS_JSON --noaa NOAA_LIST --noaa-cache DIR
                                   --model FILE [--model FILE ...] --out FILE
-python -m pipeline station-data --catalogue STATIONS_JSON --constants FILE --out DIR --sky-cache DIR [--now ISO] [--workers N]
+python -m pipeline station-data --catalogue STATIONS_JSON --constants FILE --out DIR --sky-cache DIR [--sky-store DIR] [--now ISO] [--workers N]
 python -m pipeline tide-tables --catalogue STATIONS_JSON --constants FILE [--month YYYY-MM] --out DIR [--workers N]
 
 Stores: r2 (bucket R2_BUCKET), r2:BUCKET (another bucket, same account) or dir:PATH.
@@ -120,6 +120,8 @@ def main(argv: list[str] | None = None) -> int:
     sd.add_argument("--now", type=lambda v: datetime.strptime(v, "%Y-%m-%dT%H:%MZ").replace(tzinfo=timezone.utc),
                     default=None, help="YYYY-MM-DDTHH:MMZ (default: now)")
     sd.add_argument("--workers", type=int, default=1)
+    sd.add_argument("--sky-store", type=Path, default=None,
+                    help="folder keeping each month's sun and moon data between daily runs")
     args = parser.parse_args(argv)
 
     if args.command == "station-data":
@@ -127,8 +129,10 @@ def main(argv: list[str] | None = None) -> int:
         from .station_pages import write_station_data
         r = write_station_data(json.loads(args.catalogue.read_text(encoding="utf-8")),
                                json.loads(args.constants.read_text(encoding="utf-8")),
-                               args.now or datetime.now(timezone.utc), args.out, args.sky_cache, workers=args.workers)
-        print(f"{r['written']} station files ({r['with_tides']} with tides) -> {args.out}")
+                               args.now or datetime.now(timezone.utc), args.out, args.sky_cache, workers=args.workers,
+                               sky_store=args.sky_store)
+        print(f"{r['written']} station files ({r['with_tides']} with tides, {r['sky_computed']} sky months computed)"
+              f" -> {args.out}")
         return 0
 
     if args.command == "tide-tables":

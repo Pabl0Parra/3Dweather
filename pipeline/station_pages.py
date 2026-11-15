@@ -9,9 +9,9 @@ local midnight, height m, 1 high | 0 low], ...]}], "curve": {"from", "step_min",
 from __future__ import annotations
 
 import calendar
+import gzip
 import json
 from bisect import bisect_right
-from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
@@ -80,32 +80,64 @@ def station_data(rec: dict, entry: dict | None, constants: dict[str, dict], toda
 
 
 # --- whole catalogue -----------------------------------------------------------------------------
+# Pass 1 computes each sky month once (it is the same every day of the month, so months are kept
+# in ``sky_store`` between daily runs as {YYYY-MM}.json.gz); pass 2 writes the station files.
 
 _W: dict = {}
 
 
-def _init(sky_cache: str, stations: dict, coef: dict) -> None:
-    _W.update(sky=load_sky(Path(sky_cache)), stations=stations, coef=coef)
+def _init(sky_cache: str, stations: dict, coef: dict, months: dict) -> None:
+    _W.update(sky=load_sky(Path(sky_cache)), stations=stations, coef=coef, months=months)
 
 
-def _group(job: tuple) -> int:
-    (lat, lon, tz, first), items, out = job
+def _sky_job(key: tuple) -> tuple:
+    lat, lon, tz, first = key
     n = calendar.monthrange(first.year, first.month)[1]
-    month = sky_days(lat, lon, tz, first, n, _W["sky"])
-    for rec, today, donor in items:
+    return key, sky_days(lat, lon, tz, first, n, _W["sky"])
+
+
+def _write_job(job: tuple) -> int:
+    items, out = job
+    for rec, today, donor, key in items:
         entry = _W["stations"].get(rec["id"])
-        body = station_data(rec, entry, _W["stations"], today, _W["sky"], _W["coef"], donor=donor, sky_month=month)
+        body = station_data(rec, entry, _W["stations"], today, _W["sky"], _W["coef"], donor=donor,
+                            sky_month=_W["months"][key])
         p = Path(out) / f"{rec['path']}.json"
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(body, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
     return len(items)
 
 
+def _key_text(key: tuple) -> str:
+    lat, lon, tz, first = key
+    return f"{lat}|{lon}|{tz}"
+
+
+def _load_months(store: Path | None, first: date) -> dict[str, list]:
+    if store is None:
+        return {}
+    p = Path(store) / f"{first:%Y-%m}.json.gz"
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(gzip.decompress(p.read_bytes()).decode("utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_months(store: Path, first: date, months: dict[str, list]) -> None:
+    Path(store).mkdir(parents=True, exist_ok=True)
+    p = Path(store) / f"{first:%Y-%m}.json.gz"
+    part = p.with_name(p.name + ".part")
+    part.write_bytes(gzip.compress(json.dumps(months, separators=(",", ":")).encode("utf-8")))
+    part.replace(p)
+
+
 def write_station_data(catalogue: list[dict], constants: dict, now: datetime, out: Path, sky_cache: Path,
-                       workers: int = 1) -> dict:
+                       workers: int = 1, sky_store: Path | None = None) -> dict:
     stations = constants["stations"]
     by_id = {r["id"]: r for r in catalogue}
-    groups: dict[tuple, list] = defaultdict(list)
+    items = []
     for r in catalogue:
         today = now.astimezone(ZoneInfo(r["timezone"])).date()
         key = (round(float(r["latitude"]), SKY_ROUND), round(float(r["longitude"]), SKY_ROUND), r["timezone"],
@@ -115,17 +147,44 @@ def write_station_data(catalogue: list[dict], constants: dict, now: datetime, ou
         if entry and entry["kind"] == "donor":
             d = by_id.get(entry["donor"], {})
             donor = {"name": d.get("name"), "path": d.get("path")}
-        groups[key].append((r, today, donor))
+        items.append((r, today, donor, key))
     sky = load_sky(Path(sky_cache))
     first = (now - timedelta(days=2)).date().replace(day=1)
     coef = {first + timedelta(days=k): tidal_coefficient(first + timedelta(days=k), sky) for k in range(64)}
-    jobs = [(k, items, str(out)) for k, items in groups.items()]
+
+    # Pass 1: sky months, from the store or computed.
+    needed = sorted({it[3] for it in items}, key=lambda k: (k[3], k[0], k[1], k[2]))
+    stored = {m: _load_months(sky_store, m) for m in {k[3] for k in needed}}
+    months: dict[tuple, list] = {}
+    missing = []
+    for k in needed:
+        got = stored[k[3]].get(_key_text(k))
+        if got is not None:
+            months[k] = got
+        else:
+            missing.append(k)
+    if workers > 1 and missing:
+        with ProcessPoolExecutor(max_workers=workers, initializer=_init,
+                                 initargs=(str(sky_cache), {}, {}, {})) as pool:
+            computed = list(pool.map(_sky_job, missing, chunksize=16))
+    else:
+        _init(str(sky_cache), {}, {}, {})
+        computed = [_sky_job(k) for k in missing]
+    for k, month in computed:
+        months[k] = month
+        stored[k[3]][_key_text(k)] = month
+    if sky_store is not None and computed:
+        for m, data in stored.items():
+            _save_months(sky_store, m, data)
+
+    # Pass 2: one file per station.
+    chunks = [(items[i:i + 200], str(out)) for i in range(0, len(items), 200)]
     if workers > 1:
         with ProcessPoolExecutor(max_workers=workers, initializer=_init,
-                                 initargs=(str(sky_cache), stations, coef)) as pool:
-            written = sum(pool.map(_group, jobs, chunksize=16))
+                                 initargs=(str(sky_cache), stations, coef, months)) as pool:
+            written = sum(pool.map(_write_job, chunks))
     else:
-        _init(str(sky_cache), stations, coef)
-        written = sum(_group(j) for j in jobs)
+        _init(str(sky_cache), stations, coef, months)
+        written = sum(_write_job(c) for c in chunks)
     with_tides = sum(1 for r in catalogue if stations.get(r["id"], {}).get("kind", "none") != "none")
-    return {"written": written, "with_tides": with_tides}
+    return {"written": written, "with_tides": with_tides, "sky_computed": len(computed)}

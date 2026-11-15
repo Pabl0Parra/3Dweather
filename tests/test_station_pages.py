@@ -98,7 +98,7 @@ def test_write_station_data_lays_out_files_by_path(tmp_path):
     constants = {"v": 1, "models": [], "stations": CONSTANTS}
     now = datetime(2026, 11, 14, 15, tzinfo=UTC)
     r = write_station_data(cat, constants, now, tmp_path, Path(os.environ.get("SKY_CACHE", ROOT / "sky-cache")))
-    assert r == {"written": 4, "with_tides": 2}
+    assert r == {"written": 4, "with_tides": 2, "sky_computed": 2}
     nyc = json.loads((tmp_path / "us/new-york/new-york-city.json").read_text(encoding="utf-8"))
     assert nyc["donor"] == {"name": "The Battery", "path": "us/new-york/the-battery"}
     assert nyc["today"] == "2026-11-14"
@@ -116,3 +116,21 @@ def test_cli_writes_station_data(tmp_path):
                  "--sky-cache", os.environ.get("SKY_CACHE", str(ROOT / "sky-cache")), "--now", "2026-11-14T15:00Z"]) == 0
     d = json.loads((tmp_path / "out/us/new-york/the-battery.json").read_text(encoding="utf-8"))
     assert d["today"] == "2026-11-14"
+
+
+def test_sky_months_are_cached_between_runs(tmp_path, monkeypatch):
+    import pipeline.station_pages as sp
+    calls = []
+    real = sp.sky_days
+    monkeypatch.setattr(sp, "sky_days", lambda *a, **k: calls.append(a) or real(*a, **k))
+    cat = [BATTERY, NYC]  # same place: one sky month
+    constants = {"v": 1, "models": [], "stations": CONSTANTS}
+    sky_dir = Path(os.environ.get("SKY_CACHE", ROOT / "sky-cache"))
+    store = tmp_path / "sky-months"
+    sp.write_station_data(cat, constants, datetime(2026, 11, 14, 15, tzinfo=UTC), tmp_path / "a", sky_dir, sky_store=store)
+    assert len(calls) == 1 and (store / "2026-11.json.gz").exists()
+    sp.write_station_data(cat, constants, datetime(2026, 11, 15, 15, tzinfo=UTC), tmp_path / "b", sky_dir, sky_store=store)
+    assert len(calls) == 1  # the next day reuses the month
+    a = json.loads((tmp_path / "a/us/new-york/the-battery.json").read_text(encoding="utf-8"))
+    b = json.loads((tmp_path / "b/us/new-york/the-battery.json").read_text(encoding="utf-8"))
+    assert a["days"][0]["sunrise"] == b["days"][0]["sunrise"] and b["today"] == "2026-11-15"
