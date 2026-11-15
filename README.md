@@ -12,7 +12,9 @@ A catalogue of about 24,500 tide stations and coastal places (NOAA CO-OPS and
 GeoNames) has a search box and one page per station. Every station has tide
 constants (NOAA, NOAA offsets, a nearby NOAA station, or the EOT20 global model)
 and a monthly 25-month table of high and low waters; sun, moon, solunar and
-tidal-coefficient data come from JPL DE421. Station pages show them next.
+tidal-coefficient data come from JPL DE421. Station pages, rebuilt daily, show
+the day's tide chart, the month's table, sun and moon, the weather forecast at
+the station, other months and a CSV download.
 Everything is built by GitHub Actions and published to Cloudflare R2.
 The design is in `docs/superpowers/specs/`; publishing setup is in
 [`docs/deploy.md`](docs/deploy.md).
@@ -67,7 +69,13 @@ python -m pipeline tide-tables --catalogue catalogue-out/stations.json --constan
 ```
 
 Sun and moon (`[sky]` extra) download JPL DE421 (17 MB) into `sky-cache/` on
-first use (`SKY_CACHE` changes the folder).
+first use (`SKY_CACHE` changes the folder). Station page data for today:
+
+```
+python -m pipeline station-data --catalogue catalogue-out/stations.json --constants tide-out/tide-constants.json --out web/station-data --sky-cache sky-cache --sky-store sky-months --workers 4
+```
+
+`npm run build` reads it from `web/station-data` (or `STATION_DATA_DIR`).
 
 The site lives in `web/` (Astro): `npm ci`, `npm run dev`, `npx vitest run`,
 `npx playwright test` (the end-to-end tests need a run built into

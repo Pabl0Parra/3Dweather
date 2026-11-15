@@ -376,6 +376,15 @@ These cannot be matched from outside; each is our own rule, documented as such.
   - Tide test: New York City takes the nearby NOAA station's tide under our
     rule, and the reference uses FES2022 at the place; the test runs once the
     owner supplies FES2022 (`tools/fes2022_constants.py`).
+- **Phase 9 results (2026-11-15, station pages).**
+  - Station weather: every forecast run writes `wx/{run}/stations/{cc}/{region}.json`
+    (1,511 files, 58 MB per run; Florida 0.22 MB gzip).
+  - Station data: 24,512 files (23,616 with tides), about 23 KB each (5 KB gzip).
+    A daily run takes 2 minutes on 4 workers; the first run of a month computes
+    its sun and moon (about 20,000 places, 0.23 s each) and keeps them in the
+    Actions cache.
+  - Site: 24,542 pages built in 4 min 41 s (1.3 GB); every station page changes
+    daily, about 24,500 uploads a day.
 - **Tide test.** New York City, November 2026: our high and low waters against
   the captured station data, within 2 minutes and 2 cm. The reference site's
   own FES-vs-NOAA comparison gives the expected error for FES stations.

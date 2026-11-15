@@ -13,3 +13,42 @@
 .st-links, .st-near { padding-left: 18px; line-height: 1.8; }
 .st-near span { color: var(--dim); font-size: 13px; }
 .st-soon { border: 1px dashed var(--line); border-radius: 10px; padding: 4px 16px 8px; margin-top: 24px; }
+.st-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.st-day { color: var(--dim); font-weight: 400; font-size: 16px; margin-left: 6px; }
+.st-units { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.st-units button { background: transparent; color: var(--dim); border: 0; padding: 4px 10px; font: inherit; cursor: pointer; }
+.st-units button[aria-pressed="true"] { background: #0e2440; color: #fff; }
+.st-turns { list-style: none; padding: 0; margin: 8px 0 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.st-turns li { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: #060d1a; }
+.st-turns b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
+.st-turns li.hi b { color: var(--cyan); }
+.st-turns time { font-size: 20px; margin-right: 6px; }
+.st-chart { margin: 0; }
+.st-chart svg { width: 100%; height: auto; display: block; background: #060d1a; border: 1px solid var(--line); border-radius: 10px; }
+.st-chart figcaption { font-size: 12px; color: var(--dim); margin-top: 4px; }
+.st-chart .curve { fill: none; stroke: var(--cyan); stroke-width: 2; }
+.st-chart .area { fill: rgba(80, 200, 255, 0.12); }
+.st-chart .now { stroke: #ffcc66; stroke-width: 1.5; }
+.st-chart .axis { stroke: var(--line); }
+.st-chart text { fill: var(--dim); font-size: 11px; }
+.st-chart .night { fill: rgba(0, 0, 0, 0.35); }
+.st-none { border: 1px dashed var(--line); border-radius: 10px; padding: 4px 16px 8px; margin-top: 24px; }
+.st-scroll { overflow-x: auto; }
+.st-month { width: 100%; border-collapse: collapse; font-size: 14px; }
+.st-month th, .st-month td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.st-month thead th { color: var(--dim); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.st-month tr.today { background: #0b1a30; }
+.st-month tr.picked th button { color: #fff; text-decoration: underline; }
+.st-month th button { background: none; border: 0; color: var(--cyan); font: inherit; cursor: pointer; padding: 0; white-space: nowrap; }
+.st-cell-tides > span { display: inline-block; margin-right: 10px; white-space: nowrap; }
+.st-cell-tides .hi { color: #cfe8ff; }
+.st-cell-tides .lo { color: var(--dim); }
+.st-more { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.st-more select, .st-more button { background: #060d1a; color: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font: inherit; }
+.st-source { font-size: 13px; color: var(--dim); margin-top: 24px; }
+.st-month tbody tr.picked { outline: 1px solid var(--cyan); outline-offset: -1px; }
+.st-month-other caption { text-align: left; font-weight: 600; padding: 6px 0; }
+.st-wx { border-collapse: collapse; font-size: 13px; white-space: nowrap; }
+.st-wx th, .st-wx td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: center; }
+.st-wx tbody th { text-align: left; color: var(--dim); font-weight: 500; }
+.st-note { font-size: 12px; color: var(--dim); }

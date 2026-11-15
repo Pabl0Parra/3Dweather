@@ -65,6 +65,7 @@ def _events(sky: Sky, finder, *args, keep=None):
 def sky_days(lat: float, lon: float, tz: str, first: date, n: int, sky: Sky) -> list[dict]:
     from skyfield import almanac
     from skyfield.api import wgs84
+    from skyfield.nutationlib import iau2000b_radians
 
     zone = ZoneInfo(tz)
     days = [first + timedelta(days=k) for k in range(n + 1)]
@@ -97,6 +98,7 @@ def sky_days(lat: float, lon: float, tz: str, first: date, n: int, sky: Sky) -> 
     start_t = ts.from_datetime(edges[0])
     n_samp = int(round((edges[-1] - edges[0]).total_seconds() / (60.0 * SAMPLE_MIN))) + 1
     grid = ts.tt_jd(start_t.tt + np.arange(n_samp) * step)
+    grid._nutation_angles_radians = iau2000b_radians(grid)  # 1 mas series: thousands of times, cheaply
     alt = obs.at(grid).observe(sun).apparent().altaz()[0].degrees
     sample_t = [edges[0] + timedelta(minutes=SAMPLE_MIN * k) for k in range(n_samp)]
     crossings = {h: sorted(up[h] + down[h]) for h in (-6.0, -4.0, 6.0)}

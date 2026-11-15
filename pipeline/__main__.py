@@ -1,8 +1,8 @@
 """Command line.
 
-python -m pipeline build --run YYYYMMDDHH --cache DIR --out DIR [--latest] [--prune]
+python -m pipeline build --run YYYYMMDDHH --cache DIR --out DIR [--latest] [--prune] [--catalogue STATIONS_JSON]
 python -m pipeline static --cache DIR --out DIR
-python -m pipeline cycle --cache DIR --out DIR --store (r2|dir:PATH) [--run YYYYMMDDHH]
+python -m pipeline cycle --cache DIR --out DIR --store (r2|dir:PATH) [--run YYYYMMDDHH] [--catalogue STATIONS_JSON]
 python -m pipeline upload --src DIR --prefix KEY --max-age SECONDS --store (r2|dir:PATH)
 python -m pipeline tide-atlas --eot20 ZIP_OR_DIR --out DIR
 python -m pipeline catalogue --inputs DIR --out DIR
@@ -11,6 +11,7 @@ python -m pipeline get --key KEY --out FILE --store (r2|dir:PATH)
 python -m pipeline model-constants --catalogue STATIONS_JSON --eot20 ZIP_OR_DIR --out FILE
 python -m pipeline tide-constants --catalogue STATIONS_JSON --noaa NOAA_LIST --noaa-cache DIR
                                   --model FILE [--model FILE ...] --out FILE
+python -m pipeline station-data --catalogue STATIONS_JSON --constants FILE --out DIR --sky-cache DIR [--sky-store DIR] [--now ISO] [--workers N]
 python -m pipeline tide-tables --catalogue STATIONS_JSON --constants FILE [--month YYYY-MM] --out DIR [--workers N]
 
 Stores: r2 (bucket R2_BUCKET), r2:BUCKET (another bucket, same account) or dir:PATH.
@@ -36,6 +37,17 @@ def _run_time(text: str) -> datetime:
         raise argparse.ArgumentTypeError(f"run must look like 2026111306, got {text!r}")
 
 
+def _stations(path: Path | None) -> list[dict] | None:
+    """Catalogue records for station weather, or None (no file: the run is built without it)."""
+    if path is None:
+        return None
+    if not path.exists():
+        print(f"{path} not found: no station weather in this run", file=sys.stderr)
+        return None
+    import json
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def _month(text: str):
     try:
         return datetime.strptime(text, "%Y-%m").date()
@@ -51,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--cache", required=True, type=Path, help="folder for downloaded inputs")
     build.add_argument("--out", required=True, type=Path, help="folder to write the run into")
     build.add_argument("--latest", action="store_true", help="also point latest.json at this run")
+    build.add_argument("--catalogue", type=Path, help="stations.json: also write station weather files")
     build.add_argument("--prune", action="store_true",
                        help="delete each downloaded input once used (CI: a run needs ~16 GB otherwise)")
     static = sub.add_parser("static", help="build the land mask and coastline from Natural Earth")
@@ -61,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     cyc.add_argument("--out", required=True, type=Path)
     cyc.add_argument("--store", required=True, help="r2 (credentials from the environment) or dir:PATH")
     cyc.add_argument("--run", type=_run_time, help="build this run instead of the one due now")
+    cyc.add_argument("--catalogue", type=Path, help="stations.json: also write station weather files")
     up = sub.add_parser("upload", help="upload a folder (static assets) to the store")
     up.add_argument("--src", required=True, type=Path)
     up.add_argument("--prefix", required=True)
@@ -98,7 +112,28 @@ def main(argv: list[str] | None = None) -> int:
     tt.add_argument("--month", type=_month, default=None, help="YYYY-MM (default: this month, UTC)")
     tt.add_argument("--out", required=True, type=Path)
     tt.add_argument("--workers", type=int, default=1)
+    sd = sub.add_parser("station-data", help="daily data for every station page (month of tides and sky)")
+    sd.add_argument("--catalogue", required=True, type=Path, help="stations.json")
+    sd.add_argument("--constants", required=True, type=Path, help="tide-constants.json")
+    sd.add_argument("--out", required=True, type=Path)
+    sd.add_argument("--sky-cache", required=True, type=Path, help="folder holding (or receiving) JPL DE421")
+    sd.add_argument("--now", type=lambda v: datetime.strptime(v, "%Y-%m-%dT%H:%MZ").replace(tzinfo=timezone.utc),
+                    default=None, help="YYYY-MM-DDTHH:MMZ (default: now)")
+    sd.add_argument("--workers", type=int, default=1)
+    sd.add_argument("--sky-store", type=Path, default=None,
+                    help="folder keeping each month's sun and moon data between daily runs")
     args = parser.parse_args(argv)
+
+    if args.command == "station-data":
+        import json
+        from .station_pages import write_station_data
+        r = write_station_data(json.loads(args.catalogue.read_text(encoding="utf-8")),
+                               json.loads(args.constants.read_text(encoding="utf-8")),
+                               args.now or datetime.now(timezone.utc), args.out, args.sky_cache, workers=args.workers,
+                               sky_store=args.sky_store)
+        print(f"{r['written']} station files ({r['with_tides']} with tides, {r['sky_computed']} sky months computed)"
+              f" -> {args.out}")
+        return 0
 
     if args.command == "tide-tables":
         import json
@@ -164,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "cycle":
         return cycle_mod.cycle(datetime.now(timezone.utc), args.cache, args.out, store_from_arg(args.store),
-                               run=args.run, build=cycle_mod.build_run)
+                               run=args.run, build=cycle_mod.build_run, stations=_stations(args.catalogue))
     if args.command == "upload":
         for key in upload_dir(store_from_arg(args.store), args.src, args.prefix, f"public, max-age={args.max_age}"):
             print(key)
@@ -175,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
         print(args.out)
         return 0
     try:
-        out = build_run(args.run, args.cache, args.out, prune=args.prune)
+        out = build_run(args.run, args.cache, args.out, prune=args.prune, stations=_stations(args.catalogue))
     except RunIncomplete as exc:
         print(f"not built: {exc}", file=sys.stderr)
         return 2

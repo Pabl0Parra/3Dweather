@@ -1,9 +1,12 @@
 ---
-// One page per catalogue station: /{cc}/{region}/{station}. Tides, sky and weather sections arrive in phase 9.
+// One page per catalogue station: /{cc}/{region}/{station}. With a daily data file
+// (python -m pipeline station-data) it shows tides, sun and moon for the month; the browser
+// script adds the chart, "now", the weather, other months and CSV.
 import "../../../styles/globe.css";
 import "../../../styles/station.css";
 import SearchBox from "../../../components/SearchBox.astro";
-import { loadStations, makeIndex, nearbyStations, regionFor, type StationRecord } from "../../../stations/catalogue";
+import { loadStationData, loadStations, makeIndex, nearbyStations, regionFor, type StationRecord } from "../../../stations/catalogue";
+import { dayLabel, height, skyFacts, type Hm, type StationData } from "../../../station/format";
 
 export function getStaticPaths() {
   const all = loadStations();
@@ -20,6 +23,7 @@ interface Props {
   map: ReturnType<typeof regionFor>;
 }
 const { s, near, map } = Astro.props;
+const data: StationData | null = loadStationData(s.path);
 const countries = new Intl.DisplayNames(["en"], { type: "region" });
 const country = (cc: string) => { try { return countries.of(cc) ?? cc; } catch { return cc; } };
 const deg = (v: number, pos: string, neg: string) => `${Math.abs(v).toFixed(4)}° ${v >= 0 ? pos : neg}`;
@@ -27,6 +31,16 @@ const where = s.region_name === country(s.country_code) ? s.region_name : `${s.r
 const kind = s.type === "gauge" ? `NOAA tide gauge ${s.id.replace(/^n/, "")}` : "Coastal place";
 const globe = `/wave-map#${s.latitude.toFixed(2)},${s.longitude.toFixed(2)},6.0`;
 const distance = (k: number) => (k < 10 ? `${k.toFixed(1)} km` : `${Math.round(k)} km`);
+
+const ti = data ? Math.max(0, data.days.findIndex((d) => d.date === data.today)) : 0;
+const today = data?.days[ti];
+const t = (x: Hm) => (x ? x[0] : "–");
+const sky = today ? skyFacts(today) : null;
+const SKY_ROWS: [string, string][] = [["sunrise", "Sunrise"], ["sunset", "Sunset"], ["daylight", "Daylight"], ["moon", "Moon"],
+  ["moonrise", "Moonrise"], ["moonset", "Moonset"], ["coef", "Coefficient"], ["major", "Solunar major"],
+  ["minor", "Solunar minor"], ["golden", "Golden hour"]];
+const json = data ? JSON.stringify({ ...data, path: s.path, cc: s.country_code.toLowerCase(), region: s.region_slug })
+  .replace(/</g, "\\u003c") : "";
 ---
 <!doctype html>
 <html lang="en">
@@ -52,7 +66,86 @@ const distance = (k: number) => (k < 10 ? `${k.toFixed(1)} km` : `${Math.round(k
       <h1>{s.name}</h1>
       <p class="st-lede">{kind} in {where}.</p>
 
-      <dl class="st-facts">
+      {data && data.has_tides && today && (
+        <section class="st-today" aria-labelledby="st-h-today">
+          <div class="st-head">
+            <h2 id="st-h-today">Tide times <span class="st-day" data-day-label>{dayLabel(today.date)}</span></h2>
+            <div class="st-units" role="group" aria-label="Height unit">
+              <button type="button" data-unit="m" aria-pressed="true">m</button>
+              <button type="button" data-unit="ft" aria-pressed="false">ft</button>
+            </div>
+          </div>
+          <ol class="st-turns" data-turns>
+            {today.tides.map(([hm, , h, hi]) => (
+              <li class={hi ? "hi" : "lo"}><b>{hi ? "High" : "Low"}</b> <time>{hm}</time> <span data-h={h}>{height(h, "m")}</span></li>
+            ))}
+          </ol>
+          <figure class="st-chart">
+            <svg data-chart viewBox="0 0 600 200" role="img" aria-label={`Tide height through the day at ${s.name}`}></svg>
+            <figcaption>Local time ({data.tz}). Heights above mean sea level.</figcaption>
+          </figure>
+        </section>
+      )}
+      {data && !data.has_tides && (
+        <section class="st-none">
+          <h2>Tide times</h2>
+          <p>No tide predictions here: {s.name} is more than 20 km from the open sea in our tide model.</p>
+        </section>
+      )}
+      {!data && (
+        <section class="st-soon">
+          <h2>Tide times</h2>
+          <p>The tide table for {s.name} is on its way. Until then, the <a href={`/tide-map#${s.latitude.toFixed(2)},${s.longitude.toFixed(2)},6.0`}>tide globe</a> shows the tide here hour by hour.</p>
+        </section>
+      )}
+
+      {today && (
+        <section class="st-sky" aria-labelledby="st-h-sky">
+          <h2 id="st-h-sky">Sun and moon <span class="st-day" data-sky-day>{dayLabel(today.date)}</span></h2>
+          <dl class="st-facts">
+            {SKY_ROWS.map(([key, label]) => <div><dt>{label}</dt><dd data-sky={key}>{sky![key]}</dd></div>)}
+          </dl>
+        </section>
+      )}
+
+      <section class="st-weather" data-weather hidden aria-labelledby="st-h-wx">
+        <h2 id="st-h-wx">Weather and sea</h2>
+        <div data-weather-body></div>
+      </section>
+
+      {data && (
+        <section class="st-month-wrap" aria-labelledby="st-h-month">
+          <h2 id="st-h-month">Tides, sun and moon this month</h2>
+          <div class="st-scroll">
+            <table class="st-month">
+              <thead><tr><th scope="col">Day</th>{data.has_tides && <th scope="col">Tides</th>}<th scope="col">Sun</th><th scope="col">Moon</th><th scope="col">Coef.</th></tr></thead>
+              <tbody>
+                {data.days.map((d, k) => (
+                  <tr data-i={k} class={k === ti ? "today" : undefined} aria-current={k === ti ? "date" : undefined}>
+                    <th scope="row"><button type="button" data-pick={k}>{dayLabel(d.date)}</button></th>
+                    {data.has_tides && (
+                      <td class="st-cell-tides">{d.tides.map(([hm, , h, hi]) => (
+                        <span class={hi ? "hi" : "lo"}>{hi ? "▲" : "▼"} {hm} <span data-h={h}>{height(h, "m")}</span></span>
+                      ))}</td>
+                    )}
+                    <td>{t(d.sunrise)}–{t(d.sunset)}</td>
+                    <td>{d.moon.name} {d.moon.illum}%</td>
+                    <td>{d.coef ?? "–"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {data.has_tides && (
+            <p class="st-more">
+              <label>Other months <select data-month><option value="">Choose a month</option></select></label>
+              <button type="button" data-csv>Download CSV</button>
+            </p>
+          )}
+        </section>
+      )}
+
+      <dl class="st-facts st-place">
         <div><dt>Position</dt><dd>{deg(s.latitude, "N", "S")}, {deg(s.longitude, "E", "W")}</dd></div>
         <div><dt>Local time</dt><dd>{s.timezone}</dd></div>
         {s.county && <div><dt>County</dt><dd>{s.county}</dd></div>}
@@ -60,11 +153,6 @@ const distance = (k: number) => (k < 10 ? `${k.toFixed(1)} km` : `${Math.round(k
           <div><dt>Tides from</dt><dd><a href={`/${s.reference_station.path}`}>{s.reference_station.name}</a> (NOAA)</dd></div>
         )}
       </dl>
-
-      <section class="st-soon">
-        <h2>Tide times</h2>
-        <p>The tide table for {s.name} is on its way. Until then, the <a href={`/tide-map#${s.latitude.toFixed(2)},${s.longitude.toFixed(2)},6.0`}>tide globe</a> shows the tide here hour by hour.</p>
-      </section>
 
       <section>
         <h2>Maps</h2>
@@ -86,7 +174,15 @@ const distance = (k: number) => (k < 10 ? `${k.toFixed(1)} km` : `${Math.round(k
         </section>
       )}
 
-      <p class="credits">Places: <a href="https://www.geonames.org/">GeoNames</a> (CC BY 4.0) · Tide stations: NOAA CO-OPS (public domain; not NOAA's official predictions)</p>
+      {data?.has_tides && (
+        <p class="st-source">
+          Tide source: {data.source}{data.donor && <> · taken from <a href={`/${data.donor.path}`}>{data.donor.name}</a></>}.
+          Predicted astronomical tide only, heights above mean sea level; not NOAA's official predictions.
+        </p>
+      )}
+      <p class="credits">Places: <a href="https://www.geonames.org/">GeoNames</a> (CC BY 4.0) · Tide stations: NOAA CO-OPS (public domain; not NOAA's official predictions) · Tide model: EOT20 (DGFI-TUM, CC BY 4.0) · Sun and moon: JPL DE421</p>
     </main>
+    {data && <script type="application/json" id="st-data" set:html={json}></script>}
+    {data && <script>import "../../../station/page";</script>}
   </body>
 </html>
