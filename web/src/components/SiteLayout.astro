@@ -1,0 +1,61 @@
+---
+// The frame shared by the home, browse, finder, guide and static pages: head (title, description,
+// canonical link, OpenGraph, JSON-LD), header with navigation and search, footer with credits.
+import "../styles/globe.css";
+import "../styles/site.css";
+import SearchBox from "./SearchBox.astro";
+import { jsonScript } from "../seo/jsonld";
+
+interface Props {
+  title: string;
+  description: string;
+  path: string; // "/", "/us", "/guides", ...
+  jsonld?: object[];
+  nav?: "home" | "tides" | "guides";
+}
+const { title, description, path, jsonld = [], nav } = Astro.props;
+const site = (process.env.SITE_URL || "https://example.invalid").replace(/\/$/, "");
+const canonical = `${site}${path}`;
+const cur = (n: string) => (n === nav ? "page" : undefined);
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="3Dweather" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    {jsonld.map((o) => <script type="application/ld+json" set:html={jsonScript(o)}></script>)}
+  </head>
+  <body class="site">
+    <header class="site-header">
+      <a class="brand" href="/">3Dweather</a>
+      <nav class="layer-tabs" aria-label="Site">
+        <a href="/stations" aria-current={cur("tides")}>Tides</a>
+        <a href="/wave-map">Globe</a>
+        <a href="/guides" aria-current={cur("guides")}>Guides</a>
+      </nav>
+      <div class="header-tools"><SearchBox /></div>
+    </header>
+    <main class="site-main">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <nav aria-label="About this site">
+        <a href="/about">About</a> · <a href="/guides">Guides</a> · <a href="/stations">All places</a> ·
+        <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
+      </nav>
+      <p>
+        Data: NOAA GFS, GFS-Wave and CO-OPS (public domain; tides are not NOAA's official predictions) · ECMWF IFS
+        and Open-Meteo (CC BY 4.0) · EOT20 (DGFI-TUM, CC BY 4.0) · GeoNames (CC BY 4.0) · Natural Earth · JPL DE421.
+        Not for navigation.
+      </p>
+    </footer>
+  </body>
+</html>

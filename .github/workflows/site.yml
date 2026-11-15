@@ -67,6 +67,11 @@ jobs:
             echo "::error::could not download the station catalogue"
             exit "$code"
           fi
+          if [ "$code" -eq 0 ]; then
+            # Next to stations.json: countries and regions, and popularity ranks, for the browse pages.
+            python -m pipeline get --key catalogue/countries.json --out "$RUNNER_TEMP/countries.json" --store r2
+            python -m pipeline get --key catalogue/search.json --out "$RUNNER_TEMP/search.json" --store r2
+          fi
       - name: Tide constants
         run: |
           if [ ! -f "$RUNNER_TEMP/stations.json" ]; then exit 0; fi
@@ -115,6 +120,8 @@ jobs:
         working-directory: web
         env:
           CATALOGUE_FILE: ${{ runner.temp }}/stations.json
+          # The site's public address for canonical links and sitemaps (repository variable SITE_URL).
+          SITE_URL: ${{ vars.SITE_URL }}
           STATION_DATA_DIR: ${{ runner.temp }}/station-data
           PUBLIC_TIDES_BASE: /tides
           PUBLIC_WX_BASE: /wx

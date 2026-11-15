@@ -1,0 +1,29 @@
+---
+import SiteLayout from "../components/SiteLayout.astro";
+---
+<SiteLayout title="The tidal coefficient · 3Dweather" path="/tidal-coefficient" nav="guides"
+  description="What the tidal coefficient means, how it is worked out and how to read it.">
+  <article class="article">
+    <h1>The tidal coefficient</h1>
+    <p class="lede">One number, from about 20 to 120, for how strong the tide is on a given day.</p>
+    <h2>Where it comes from</h2>
+    <p>The coefficient is a French convention, used on the Atlantic and Channel coasts of France and widely by
+      sailors, fishers and shell gatherers. It compares the day's tidal range with an average spring tide, scaled so
+      that an average spring tide is about 95, an average neap tide about 45, and the largest tides of the
+      19-year lunar cycle reach about 120.</p>
+    <h2>How we work it out</h2>
+    <p>The range of the tide follows the positions of the Moon and Sun: largest when they line up (new and full
+      moon), and larger still when the Moon is close to the Earth or both are near the equator. We compute the
+      coefficient from the Moon's and Sun's positions each day (JPL DE421 ephemeris). It is the same number for
+      every station on a given day: it describes the astronomical drive, not the local range. Our values come close
+      to the official French ones but are not identical.</p>
+    <h2>Reading it</h2>
+    <ul>
+      <li><strong>Below 45, low</strong>: neap tides, small range, gentle currents.</li>
+      <li><strong>45 to 69, average</strong>.</li>
+      <li><strong>70 to 89, high</strong>: spring tides, strong currents in channels.</li>
+      <li><strong>90 and above, very high</strong>: big springs, very low low waters, the highest high waters.</li>
+    </ul>
+    <p>The coefficient is printed for every day in each station's month table, next to the moon phase it follows.</p>
+  </article>
+</SiteLayout>

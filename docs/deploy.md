@@ -53,6 +53,15 @@ Repository → **Settings** → **Secrets and variables** → **Actions** →
 
 The token from step 2 needs read and write access to the private bucket too.
 
+Then, on the **Variables** tab, add the repository variable `SITE_URL`: the
+site's public address without a trailing slash (the `r2.dev` address until there
+is a domain). Canonical links, sitemaps and `robots.txt` use it; without it they
+point at `https://example.invalid`.
+
+The home page is published as `index.html`. On a custom domain, set the
+bucket's index document (or a Cloudflare rule) so `/` serves it; `r2.dev` does
+not.
+
 ## 4. First runs
 
 1. **Actions** → **Static assets** → **Run workflow**. This uploads the land

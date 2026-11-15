@@ -1,0 +1,39 @@
+---
+import SiteLayout from "../components/SiteLayout.astro";
+const SOURCES: [string, string, string][] = [
+  ["NOAA GFS and GFS-Wave", "Wind, temperature, rain, clouds, pressure and waves", "Public domain"],
+  ["ECMWF IFS", "Gusts, rain and pressure fields", "CC BY 4.0"],
+  ["Open-Meteo", "Model data delivery (its open data bucket)", "CC BY 4.0"],
+  ["Copernicus Marine (Mercator)", "Ocean currents and sea temperature", "Copernicus Marine licence"],
+  ["NOAA CO-OPS", "Tide gauges, harmonic constants and offsets", "Public domain"],
+  ["EOT20 (DGFI-TUM)", "Global ocean tide model", "CC BY 4.0"],
+  ["GeoNames", "Place names and positions", "CC BY 4.0"],
+  ["Natural Earth", "Coastlines and land", "Public domain"],
+  ["JPL DE421", "Sun and moon positions", "Public domain"],
+  ["OpenStreetMap", "Finder map tiles", "ODbL"],
+];
+---
+<SiteLayout title="About · 3Dweather" path="/about" description="What 3Dweather is, where its data comes from and how it is built.">
+  <article class="article">
+    <h1>About</h1>
+    <p class="lede">3Dweather is a free, non-commercial, open-source site for tide times and marine weather.</p>
+    <h2>What it shows</h2>
+    <p>A 3D globe of the global forecast (waves, wind, rain and clouds, temperature, currents and tides), regional
+      weather maps, and a page for each of about 24,500 tide stations and coastal places with high and low
+      tides, sun and moon times and the local forecast.</p>
+    <h2>Where the data comes from</h2>
+    <div class="st-scroll">
+      <table class="st-month">
+        <thead><tr><th scope="col">Source</th><th scope="col">Used for</th><th scope="col">Licence</th></tr></thead>
+        <tbody>{SOURCES.map(([s, u, l]) => <tr><th scope="row">{s}</th><td>{u}</td><td>{l}</td></tr>)}</tbody>
+      </table>
+    </div>
+    <p>Tide predictions are computed by this site from the sources above. They are not NOAA's official predictions,
+      and nothing here is fit for navigation.</p>
+    <h2>How it is built</h2>
+    <p>There is no server. Scheduled jobs on GitHub Actions download the open data, build every file and page,
+      and publish them as static files to Cloudflare R2. The forecast updates every six hours, the station pages
+      every day, the tide tables every month. The code is on
+      <a href="https://github.com/Pabl0Parra/3Dweather">GitHub</a>; report problems there as issues.</p>
+  </article>
+</SiteLayout>

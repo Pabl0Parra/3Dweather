@@ -1,0 +1,38 @@
+---
+import SiteLayout from "../components/SiteLayout.astro";
+---
+<SiteLayout title="What is a tide? · 3Dweather" path="/what-is-a-tide" nav="guides"
+  description="Why the sea rises and falls, spring and neap tides, and how tide times are predicted.">
+  <article class="article">
+    <h1>What is a tide?</h1>
+    <p class="lede">The slow rise and fall of the sea, driven by the Moon and the Sun.</p>
+    <h2>The pull of the Moon and the Sun</h2>
+    <p>The Moon's gravity pulls a little harder on the side of the Earth facing it than on the far side. The
+      difference stretches the oceans into two bulges, one under the Moon and one opposite it. As the Earth turns,
+      a coast passes through both bulges, so most places see two high waters and two low waters a day. Because the
+      Moon moves along its orbit while the Earth turns, the cycle takes about 24 hours 50 minutes, so the tides
+      come about 50 minutes later each day.</p>
+    <p>The Sun does the same at a little under half the strength.</p>
+    <h2>Spring and neap tides</h2>
+    <p>Around new and full moon the Sun and Moon pull in line and their bulges add up: high waters are higher
+      and low waters lower. These are <em>spring tides</em> (nothing to do with the season). Around the quarter
+      moons they pull at right angles and partly cancel: the range is smallest, the <em>neap tides</em>. The
+      <a href="/tidal-coefficient">tidal coefficient</a> puts a number on where in this cycle a day falls.</p>
+    <h2>Why every coast is different</h2>
+    <p>The real ocean is not a smooth ball of water. Continents block the bulges, basins resonate, and the tide
+      travels round each ocean as a wave. Some coasts get one tide a day, some two equal tides, many two unequal
+      ones. Bays and estuaries can amplify the range to over ten metres, while some seas barely move.</p>
+    <h2>How tides are predicted</h2>
+    <p>Each place's tide can be written as a sum of regular waves, the <em>harmonic constituents</em>, each tied to
+      a motion of the Moon or Sun: M2 (the principal lunar, every 12 h 25 min), S2 (solar, every 12 h), K1 and O1
+      (daily) and dozens more. Measure the tide at a place for long enough and you know the size and timing of
+      each wave there; add them up for any future date and you have a prediction.</p>
+    <p>On this site, NOAA tide gauges use NOAA's published constituents; places near a NOAA gauge use NOAA's
+      time and height corrections or that gauge's tide; everywhere else uses the EOT20 global ocean tide model.
+      Each station page says which. Heights are above mean sea level.</p>
+    <h2>What predictions leave out</h2>
+    <p>Predictions are the astronomical tide only. Wind, air pressure and river flow can raise or lower the sea
+      by tens of centimetres, and storm surges by metres. Our tides are not NOAA's official predictions and are
+      not for navigation.</p>
+  </article>
+</SiteLayout>

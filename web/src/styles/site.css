@@ -1,0 +1,47 @@
+/* Home, browse, finder, guide and static pages (shares the tokens in globe.css). */
+body.site { min-height: 100vh; display: flex; flex-direction: column; overflow-x: hidden; }
+.site-main { flex: 1; width: 100%; max-width: 980px; margin: 0 auto; padding: 16px 16px 40px; line-height: 1.55; }
+.site-main h1 { font-size: clamp(24px, 5vw, 34px); margin: 8px 0 6px; line-height: 1.2; }
+.site-main h2 { font-size: 19px; margin: 28px 0 10px; }
+.site-main a { color: var(--cyan); }
+.site-main p, .site-main li { overflow-wrap: anywhere; }
+.lede { color: var(--dim); margin: 0 0 16px; }
+.site-footer { border-top: 1px solid var(--line); padding: 16px; color: var(--dim); font-size: 13px; }
+.site-footer a { color: var(--ink); }
+.site-footer p { max-width: 980px; margin: 8px auto 0; }
+.site-footer nav { max-width: 980px; margin: 0 auto; }
+
+.crumbs { font-size: 13px; color: var(--dim); }
+.crumbs a { color: var(--dim); }
+
+.cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.cards li { margin: 0; }
+.cards a { display: block; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #060d1a;
+  color: var(--ink); text-decoration: none; height: 100%; }
+.cards a:hover, .cards a:focus-visible { border-color: var(--cyan); }
+.cards small { display: block; color: var(--dim); font-size: 12px; }
+
+.plain-list { columns: 3 220px; padding-left: 18px; margin: 0; }
+.plain-list li { break-inside: avoid; margin: 2px 0; }
+.plain-list .tag { color: var(--dim); font-size: 12px; }
+
+.filter { display: block; width: 100%; max-width: 360px; margin: 0 0 12px; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: #060d1a; color: var(--ink); font: inherit; }
+
+.hero { padding: 20px 0 8px; }
+.hero .search { display: inline-block; }
+.btn { display: inline-block; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: #0b1628;
+  color: var(--ink); font: inherit; cursor: pointer; text-decoration: none; }
+.btn:hover, .btn:focus-visible { border-color: var(--cyan); }
+.near-status { color: var(--dim); font-size: 14px; }
+
+details.continent { border-bottom: 1px solid var(--line); padding: 6px 0; }
+details.continent summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+
+.finder-map { height: min(70vh, 560px); border: 1px solid var(--line); border-radius: 10px; margin: 12px 0; background: #0a1220; }
+.finder-map .cluster { display: flex; align-items: center; justify-content: center; border-radius: 50%;
+  background: rgba(63, 224, 255, 0.85); color: #021018; font: 600 12px/1 ui-sans-serif, system-ui, sans-serif;
+  box-shadow: 0 0 0 4px rgba(63, 224, 255, 0.25); }
+
+.article { max-width: 720px; }
+.article h2 { margin-top: 24px; }

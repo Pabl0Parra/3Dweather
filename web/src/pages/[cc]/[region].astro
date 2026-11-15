@@ -1,0 +1,49 @@
+---
+// Region page: popular places and every place in the region (filterable).
+import SiteLayout from "../../components/SiteLayout.astro";
+import { browseTree, loadCountries, loadRanks, popular } from "../../stations/browse";
+import { loadStations } from "../../stations/catalogue";
+import { breadcrumbs } from "../../seo/jsonld";
+
+export function getStaticPaths() {
+  const ranks = loadRanks();
+  return browseTree(loadStations(), loadCountries(), ranks).flatMap((c) => c.regions.map((r) => ({
+    params: { cc: c.cc.toLowerCase(), region: r.slug }, props: { country: c.name, cc: c.cc, r, ranks },
+  })));
+}
+const { country, cc, r, ranks } = Astro.props;
+const top = r.stations.length > 12 ? popular(r.stations, ranks, 8) : [];
+const cpath = `/${cc.toLowerCase()}`;
+const path = `${cpath}/${r.slug}`;
+const site = (process.env.SITE_URL || "https://example.invalid").replace(/\/$/, "");
+const title = r.name === country ? country : `${r.name}, ${country}`;
+---
+<SiteLayout title={`${title} tide times · 3Dweather`} path={path} nav="tides"
+  description={`Tide times, sun and moon for ${r.stations.length} coastal ${r.stations.length === 1 ? "place" : "places"} in ${title}.`}
+  jsonld={[breadcrumbs(site, [["Home", "/"], [country, cpath], [r.name, path]])]}>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> / <a href={cpath}>{country}</a> / {r.name}</nav>
+  <h1>{title} tide times</h1>
+  <p class="lede">{r.stations.length.toLocaleString("en")} coastal {r.stations.length === 1 ? "place" : "places"}.</p>
+
+  {top.length > 0 && (
+    <section aria-labelledby="h-popular">
+      <h2 id="h-popular">Popular places</h2>
+      <ul class="cards popular">
+        {top.map((s) => <li><a href={`/${s.path}`}>{s.name}<small>{s.type === "gauge" ? "Tide gauge" : s.county ?? r.name}</small></a></li>)}
+      </ul>
+    </section>
+  )}
+
+  <section aria-labelledby="h-all">
+    <h2 id="h-all">{top.length ? "All places" : "Places"}</h2>
+    {r.stations.length > 20 && <input class="filter" type="search" placeholder="Filter places" aria-label="Filter places" data-filter=".places li" />}
+    <ul class="plain-list places">
+      {r.stations.map((s) => <li><a href={`/${s.path}`}>{s.name}</a>{s.type === "gauge" && <span class="tag"> · gauge</span>}</li>)}
+    </ul>
+  </section>
+</SiteLayout>
+<script>
+  import { mountFilter } from "../../browse/filter";
+  document.querySelectorAll<HTMLInputElement>("input[data-filter]").forEach((i) =>
+    mountFilter(i, [...document.querySelectorAll<HTMLElement>(i.dataset.filter!)]));
+</script>

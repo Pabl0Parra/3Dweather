@@ -15,7 +15,8 @@ and a monthly 25-month table of high and low waters; sun, moon, solunar and
 tidal-coefficient data come from JPL DE421. Station pages, rebuilt daily, show
 the day's tide chart, the month's table, sun and moon, the weather forecast at
 the station, other months and a CSV download.
-Everything is built by GitHub Actions and published to Cloudflare R2.
+A home page, country and region pages, a finder map (OpenStreetMap), guides
+and sitemaps round out the site. Everything is built by GitHub Actions and published to Cloudflare R2.
 The design is in `docs/superpowers/specs/`; publishing setup is in
 [`docs/deploy.md`](docs/deploy.md).
 

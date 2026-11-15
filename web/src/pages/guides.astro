@@ -1,0 +1,15 @@
+---
+import SiteLayout from "../components/SiteLayout.astro";
+const GUIDES = [
+  ["/what-is-a-tide", "What is a tide?", "Why the sea rises and falls twice a day, spring and neap tides, and how tides are predicted."],
+  ["/tidal-coefficient", "The tidal coefficient", "One number for how big today's tide is, from 20 to 120."],
+  ["/solunar-times", "Solunar times", "The major and minor periods on every station page, and where they come from."],
+];
+---
+<SiteLayout title="Guides · 3Dweather" path="/guides" nav="guides" description="Short guides to tides, tidal coefficients and solunar times.">
+  <h1>Guides</h1>
+  <p class="lede">Short explanations of what the station pages show.</p>
+  <ul class="cards">
+    {GUIDES.map(([href, title, text]) => <li><a href={href}>{title}<small>{text}</small></a></li>)}
+  </ul>
+</SiteLayout>

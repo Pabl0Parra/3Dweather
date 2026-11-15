@@ -1,0 +1,77 @@
+---
+// Home: search, tides near you, popular places, countries by continent, and the maps.
+import SiteLayout from "../components/SiteLayout.astro";
+import SearchBox from "../components/SearchBox.astro";
+import { CONTINENTS, loadCountries, loadRanks, popular } from "../stations/browse";
+import { loadStations } from "../stations/catalogue";
+import { REGIONS } from "../region/regions";
+
+const stations = loadStations();
+const countries = loadCountries();
+const ranks = loadRanks();
+const top = popular(stations, ranks, 12);
+const byContinent = Object.entries(CONTINENTS)
+  .map(([code, name]) => ({ name, list: countries.filter((c) => c.continent === code).sort((a, b) => a.name.localeCompare(b.name, "en")) }))
+  .filter((g) => g.list.length);
+const where = (s: (typeof stations)[number]) => s.region_name;
+const jsonld = [{ "@context": "https://schema.org", "@type": "WebSite", name: "3Dweather",
+  url: (process.env.SITE_URL || "https://example.invalid").replace(/\/$/, "") + "/" }];
+---
+<SiteLayout title="3Dweather · tide times, waves and weather worldwide" path="/" nav="home" jsonld={jsonld}
+  description="Tide times, tide charts, sun and moon for 24,000 coastal places, with a live 3D globe of waves, wind, rain and currents.">
+  <section class="hero">
+    <h1>Tides, waves and weather for the coast</h1>
+    <p class="lede">High and low tides, sun and moon for {stations.length ? stations.length.toLocaleString("en") : "thousands of"} coastal places, and a live globe of the forecast.</p>
+    <SearchBox prefix="hero" />
+  </section>
+
+  <section aria-labelledby="h-near">
+    <h2 id="h-near">Tides near you</h2>
+    <p><button type="button" class="btn" data-near>Use my location</button> <span class="near-status" data-near-status aria-live="polite"></span></p>
+    <ul class="cards near-list" data-near-list></ul>
+  </section>
+
+  {top.length > 0 && (
+    <section aria-labelledby="h-popular">
+      <h2 id="h-popular">Popular places</h2>
+      <ul class="cards popular">
+        {top.map((s) => <li><a href={`/${s.path}`}>{s.name}<small>{where(s)}</small></a></li>)}
+      </ul>
+    </section>
+  )}
+
+  <section aria-labelledby="h-maps">
+    <h2 id="h-maps">Maps</h2>
+    <ul class="cards">
+      <li><a href="/wave-map">Waves<small>3D globe, 7 days</small></a></li>
+      <li><a href="/wind-map">Wind<small>3D globe</small></a></li>
+      <li><a href="/weather-map">Rain and clouds<small>3D globe</small></a></li>
+      <li><a href="/temperature-map">Temperature<small>3D globe</small></a></li>
+      <li><a href="/ocean-currents-map">Ocean currents<small>3D globe</small></a></li>
+      <li><a href="/tide-map">Tides<small>3D globe</small></a></li>
+      {REGIONS.map((r) => <li><a href={`/weather-map/${r.slug}`}>{r.title}<small>Regional weather map</small></a></li>)}
+    </ul>
+  </section>
+
+  {byContinent.length > 0 && (
+    <section aria-labelledby="h-countries">
+      <h2 id="h-countries">Countries</h2>
+      {byContinent.map((g) => (
+        <details class="continent">
+          <summary>{g.name} <span class="tag">({g.list.length})</span></summary>
+          <ul class="plain-list">
+            {g.list.map((c) => <li><a href={`/${c.cc.toLowerCase()}`}>{c.name}</a> <span class="tag">{c.count}</span></li>)}
+          </ul>
+        </details>
+      ))}
+      <p><a href="/stations">Find a place on the map</a></p>
+    </section>
+  )}
+</SiteLayout>
+<script>
+  import { mountNear } from "../home/near";
+  const b = document.querySelector<HTMLButtonElement>("[data-near]");
+  const l = document.querySelector<HTMLElement>("[data-near-list]");
+  const s = document.querySelector<HTMLElement>("[data-near-status]");
+  if (b && l && s) mountNear(b, l, s);
+</script>

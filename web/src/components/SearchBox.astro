@@ -1,14 +1,18 @@
 ---
 // Header station search: a button that opens a panel with a combobox; the catalogue loads on first open.
+// `prefix` keeps ids unique when a page has two boxes (the home page's hero).
+interface Props { prefix?: string }
+const { prefix = "station" } = Astro.props;
+const panel = prefix === "station" ? "search-panel" : `${prefix}-search-panel`;
 ---
 <div class="search" data-search>
-  <button type="button" class="units-button search-button" aria-expanded="false" aria-controls="search-panel">Search</button>
-  <div class="search-panel" id="search-panel" hidden>
-    <label class="search-label" for="station-search">Search tide stations and places</label>
-    <input id="station-search" class="search-input" type="search" role="combobox" aria-expanded="false"
-      aria-autocomplete="list" aria-controls="station-results" autocomplete="off" spellcheck="false"
+  <button type="button" class="units-button search-button" aria-expanded="false" aria-controls={panel}>Search</button>
+  <div class="search-panel" id={panel} hidden>
+    <label class="search-label" for={`${prefix}-search`}>Search tide stations and places</label>
+    <input id={`${prefix}-search`} class="search-input" type="search" role="combobox" aria-expanded="false"
+      aria-autocomplete="list" aria-controls={`${prefix}-results`} autocomplete="off" spellcheck="false"
       placeholder="Town, harbour or gauge" />
-    <ul id="station-results" class="search-results" role="listbox" aria-label="Stations"></ul>
+    <ul id={`${prefix}-results`} class="search-results" role="listbox" aria-label="Stations"></ul>
     <p class="search-status" aria-live="polite"></p>
   </div>
 </div>

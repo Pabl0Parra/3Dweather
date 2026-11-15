@@ -41,7 +41,7 @@ export function mountSearchBox(root: HTMLElement): void {
     active = i;
     list.querySelectorAll<HTMLElement>("[role=option]").forEach((li, k) => li.setAttribute("aria-selected", String(k === i)));
     if (i >= 0) {
-      input.setAttribute("aria-activedescendant", `station-opt-${i}`);
+      input.setAttribute("aria-activedescendant", `${input.id.replace(/-search$/, "")}-opt-${i}`);
       list.children[i]?.scrollIntoView({ block: "nearest" });
     } else input.removeAttribute("aria-activedescendant");
   };
@@ -51,7 +51,7 @@ export function mountSearchBox(root: HTMLElement): void {
     results = search(cat, input.value);
     list.replaceChildren(...results.map((e, i) => {
       const li = document.createElement("li");
-      li.id = `station-opt-${i}`;
+      li.id = `${input.id.replace(/-search$/, "")}-opt-${i}`;
       li.setAttribute("role", "option");
       li.setAttribute("aria-selected", "false");
       const a = document.createElement("a");

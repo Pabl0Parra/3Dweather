@@ -385,6 +385,15 @@ These cannot be matched from outside; each is our own rule, documented as such.
     Actions cache.
   - Site: 24,542 pages built in 4 min 41 s (1.3 GB); every station page changes
     daily, about 24,500 uploads a day.
+- **Phase 10 results (2026-11-15, site shell).**
+  - Home, 1,710 country and region pages, the finder (`/stations`, Leaflet on
+    OpenStreetMap tiles, our own grid clustering over `search.json`), three
+    guides, about, privacy and terms.
+  - SEO: canonical links, BreadcrumbList on browse and station pages, FAQPage
+    on station pages (the same questions shown on the page), `sitemap.xml`
+    index with pages, places and station files (40,000 URLs per file), and
+    `robots.txt`. The site address comes from the `SITE_URL` variable.
+  - Full build: 26,261 pages in 4 min 47 s.
 - **Tide test.** New York City, November 2026: our high and low waters against
   the captured station data, within 2 minutes and 2 cm. The reference site's
   own FES-vs-NOAA comparison gives the expected error for FES stations.

@@ -142,3 +142,10 @@ def test_site_rebuilds_daily_with_station_data():
     assert "STATION_DATA_DIR: ${{ runner.temp }}/station-data" in t
     assert "PUBLIC_TIDES_BASE: /tides" in t
     assert "python -m pipeline publish-site --dist web/dist --store r2" in t
+
+
+def test_site_builds_browse_pages_and_sitemaps():
+    t = text("site.yml")
+    # countries.json and search.json sit next to stations.json for the home, country and region pages.
+    assert "--key catalogue/countries.json" in t and "--key catalogue/search.json" in t
+    assert "SITE_URL: ${{ vars.SITE_URL }}" in t
