@@ -1,11 +1,14 @@
 // Station page browser script: the tide chart with a "now" line, the day picker (month table rows),
-// the m/ft switch, the weather strip from the latest forecast run, and other months + CSV.
+// sun and moon for the picked day, the m/ft switch, the weather strip from the latest forecast run,
+// and other months + CSV. When the visitor's today is past the embedded month (the page was built
+// before the month turned over in the station's zone), today's tides come from the tide table.
 import { chartPath } from "./chart";
-import { dayLabel, height, todayIndex, type StationData, type Turn, type Unit } from "./format";
-import { monthTurns, monthsIn, toCsv, type MonthTurn, type TideTable } from "./months";
+import { dayLabel, height, localDate, skyFacts, todayIndex, type StationData, type Turn, type Unit } from "./format";
+import { dayFromTable, monthTurns, monthsIn, toCsv, type MonthTurn, type TideTable } from "./months";
 import { loadWeather, type WxSeries } from "./weather";
 
 type PageData = StationData & { path: string; cc: string; region: string };
+type View = { date: string; day_minutes: number; tides: Turn[]; around: Turn[]; now: boolean };
 
 const WX_BASE: string = import.meta.env.PUBLIC_WX_BASE || "/wx";
 const TIDES_BASE: string = import.meta.env.PUBLIC_TIDES_BASE || "/tides";
@@ -30,11 +33,17 @@ function localMinutes(tz: string, now: Date): number {
   return Number(p.hour) * 60 + Number(p.minute);
 }
 
+function node(name: string, attrs: Record<string, string | number>, text?: string): SVGElement {
+  const n = document.createElementNS(SVG, name);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
+  if (text != null) n.textContent = text;
+  return n;
+}
+
 function start(data: PageData): void {
   const days = data.days;
-  let today = todayIndex(days, data.tz, new Date());
-  if (today < 0) today = Math.max(0, days.findIndex((d) => d.date === data.today));
-  let pick = today;
+  const live = todayIndex(days, data.tz, new Date()); // -1: the visitor's today is not in the embedded month
+  const fallback = Math.max(0, days.findIndex((d) => d.date === data.today));
   let unit = readUnit();
 
   const all = days.flatMap((d) => d.tides.map((t) => t[2]));
@@ -45,33 +54,30 @@ function start(data: PageData): void {
   const svg = document.querySelector<SVGSVGElement>("svg[data-chart]");
   const turnsList = document.querySelector<HTMLElement>("[data-turns]");
   const dayLabelEl = document.querySelector<HTMLElement>("[data-day-label]");
+  const skyDay = document.querySelector<HTMLElement>("[data-sky-day]");
 
-  function neighbourTurns(i: number): Turn[] {
-    const out: Turn[] = [];
-    if (i > 0) out.push(...days[i - 1].tides.map((t) => [t[0], t[1] - days[i - 1].day_minutes, t[2], t[3]] as Turn));
-    out.push(...days[i].tides);
-    if (i + 1 < days.length) out.push(...days[i + 1].tides.map((t) => [t[0], t[1] + days[i].day_minutes, t[2], t[3]] as Turn));
-    return out;
+  function monthView(i: number): View {
+    const around: Turn[] = [];
+    if (i > 0) around.push(...days[i - 1].tides.map((t) => [t[0], t[1] - days[i - 1].day_minutes, t[2], t[3]] as Turn));
+    around.push(...days[i].tides);
+    if (i + 1 < days.length) around.push(...days[i + 1].tides.map((t) => [t[0], t[1] + days[i].day_minutes, t[2], t[3]] as Turn));
+    return { date: days[i].date, day_minutes: days[i].day_minutes, tides: days[i].tides, around, now: i === live };
   }
 
-  function node(name: string, attrs: Record<string, string | number>, text?: string): SVGElement {
-    const n = document.createElementNS(SVG, name);
-    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
-    if (text != null) n.textContent = text;
-    return n;
-  }
+  let pick = live >= 0 ? live : fallback;
+  let view = monthView(pick);
 
   function drawChart(): void {
     if (!svg || !data.has_tides) return;
-    const d = days[pick];
-    const n = d.day_minutes;
+    const n = view.day_minutes;
     const size = { w: W, h: H - TOP - BOTTOM, ...range };
-    const { path, marks } = chartPath(d, data.curve, neighbourTurns(pick), size);
+    const { path, marks } = chartPath(view, data.curve, view.around, size);
     svg.replaceChildren();
     const g = node("g", { transform: `translate(0 ${TOP})` });
     const x = (m: number) => (m / n) * W;
-    if (d.sunrise) g.append(node("rect", { class: "night", x: 0, y: -TOP, width: x(d.sunrise[1]), height: H }));
-    if (d.sunset) g.append(node("rect", { class: "night", x: x(d.sunset[1]), y: -TOP, width: W - x(d.sunset[1]), height: H }));
+    const sky = days.find((d) => d.date === view.date);
+    if (sky?.sunrise) g.append(node("rect", { class: "night", x: 0, y: -TOP, width: x(sky.sunrise[1]), height: H }));
+    if (sky?.sunset) g.append(node("rect", { class: "night", x: x(sky.sunset[1]), y: -TOP, width: W - x(sky.sunset[1]), height: H }));
     const zero = size.h - ((0 - range.lo) / (range.hi - range.lo)) * size.h;
     g.append(node("line", { class: "axis", x1: 0, x2: W, y1: zero, y2: zero }));
     g.append(node("path", { class: "area", d: `${path}L${W},${size.h}L0,${size.h}Z` }));
@@ -83,7 +89,7 @@ function start(data: PageData): void {
       const anchor = m.x < 30 ? "start" : m.x > W - 30 ? "end" : "middle";
       g.append(node("text", { x: m.x, y: ty, "text-anchor": anchor }, `${m.hm} ${height(m.h, unit)}`));
     }
-    if (pick === today) {
+    if (view.now) {
       const now = x(Math.min(n, localMinutes(data.tz, new Date())));
       g.append(node("line", { class: "now", x1: now, x2: now, y1: -TOP, y2: size.h, "data-now": "" }));
     }
@@ -91,14 +97,32 @@ function start(data: PageData): void {
   }
 
   function drawTurns(): void {
+    if (dayLabelEl) dayLabelEl.textContent = dayLabel(view.date);
     if (!turnsList) return;
-    turnsList.replaceChildren(...days[pick].tides.map(([hm, , h, hi]) => {
+    turnsList.replaceChildren(...view.tides.map(([hm, , h, hi]) => {
       const li = document.createElement("li");
       li.className = hi ? "hi" : "lo";
-      li.innerHTML = `<b>${hi ? "High" : "Low"}</b> <time>${hm}</time> <span data-h="${h}">${height(h, unit)}</span>`;
+      const b = document.createElement("b");
+      b.textContent = hi ? "High" : "Low";
+      const time = document.createElement("time");
+      time.textContent = hm;
+      const span = document.createElement("span");
+      span.dataset.h = String(h);
+      span.textContent = height(h, unit);
+      li.append(b, " ", time, " ", span);
       return li;
     }));
-    if (dayLabelEl) dayLabelEl.textContent = dayLabel(days[pick].date);
+  }
+
+  function drawSky(i: number): void {
+    const facts = skyFacts(days[i]);
+    document.querySelectorAll<HTMLElement>("[data-sky]").forEach((dd) => { dd.textContent = facts[dd.dataset.sky!] ?? "–"; });
+    if (skyDay) skyDay.textContent = dayLabel(days[i].date);
+  }
+
+  function show(): void {
+    drawTurns();
+    drawChart();
   }
 
   function applyUnit(): void {
@@ -114,18 +138,37 @@ function start(data: PageData): void {
   }));
 
   const rows = document.querySelectorAll<HTMLTableRowElement>(".st-month tbody tr");
-  rows.forEach((r) => r.classList.toggle("today", Number(r.dataset.i) === today));
+  rows.forEach((r) => {
+    const on = Number(r.dataset.i) === live;
+    r.classList.toggle("today", on);
+    if (on) r.setAttribute("aria-current", "date");
+    else r.removeAttribute("aria-current");
+  });
   document.querySelectorAll<HTMLButtonElement>("[data-pick]").forEach((b) => b.addEventListener("click", () => {
     pick = Number(b.dataset.pick);
+    view = monthView(pick);
     rows.forEach((r) => r.classList.toggle("picked", Number(r.dataset.i) === pick));
-    drawTurns();
-    drawChart();
+    drawSky(pick);
+    show();
     document.querySelector(".st-today")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }));
 
-  if (pick !== Math.max(0, days.findIndex((d) => d.date === data.today))) drawTurns();
+  drawSky(pick);
+  show();
   applyUnit();
-  if (data.has_tides) setupMonths(data, () => unit);
+  if (data.has_tides) {
+    const table = setupMonths(data, () => unit);
+    if (live < 0) {
+      const date = localDate(data.tz, new Date());
+      table.then((t) => {
+        if (!t || pick !== fallback || view.date !== days[fallback].date) return; // the visitor already picked a day
+        const d = dayFromTable(t, date, data.tz);
+        if (!d.tides.length) return;
+        view = { ...d, now: true };
+        show();
+      });
+    }
+  }
   loadWeather(WX_BASE, data.cc, data.region, data.id).then((w) => { if (w) drawWeather(w, data.tz); });
 }
 
@@ -144,36 +187,36 @@ function drawWeather(w: WxSeries, tz: string): void {
   const num = (v: number | null | undefined, digits = 0) => (v == null ? "–" : v.toFixed(digits));
   const kmh = (v: number | null | undefined) => (v == null ? "–" : String(Math.round(v * 3.6)));
   const arrow = (deg: number | null | undefined) => (deg == null ? "" : ARROWS[Math.round(deg / 45) % 8]);
-  const lines: [string, (k: number) => string, string[]][] = [
-    ["Air °C", (k) => num(w.rows[k].t), ["t"]],
-    ["Wind km/h", (k) => `${arrow(w.rows[k].wd)} ${kmh(w.rows[k].ws)}`, ["ws"]],
-    ["Gust km/h", (k) => kmh(w.rows[k].g), ["g"]],
-    ["Rain mm/h", (k) => num(w.rows[k].r, 1), ["r"]],
-    ["Cloud %", (k) => num(w.rows[k].c), ["c"]],
-    ["Waves m", (k) => num(w.rows[k].wh, 1), ["wh"]],
-    ["Period s", (k) => num(w.rows[k].wp), ["wp"]],
-    ["Sea °C", (k) => num(w.rows[k].sst), ["sst"]],
+  const lines: [string, (k: number) => string, string][] = [
+    ["Air °C", (k) => num(w.rows[k].t), "t"],
+    ["Wind km/h", (k) => `${arrow(w.rows[k].wd)} ${kmh(w.rows[k].ws)}`, "ws"],
+    ["Gust km/h", (k) => kmh(w.rows[k].g), "g"],
+    ["Rain mm/h", (k) => num(w.rows[k].r, 1), "r"],
+    ["Cloud %", (k) => num(w.rows[k].c), "c"],
+    ["Waves m", (k) => num(w.rows[k].wh, 1), "wh"],
+    ["Period s", (k) => num(w.rows[k].wp), "wp"],
+    ["Sea °C", (k) => num(w.rows[k].sst), "sst"],
   ];
-  const used = lines.filter(([, , f]) => idx.some((k) => w.rows[k][f[0]] != null));
+  const used = lines.filter(([, , f]) => idx.some((k) => w.rows[k][f] != null));
   const th = idx.map((k) => `<th scope="col">${head.format(w.times[k])}</th>`).join("");
   const tr = used.map(([label, cell]) => `<tr><th scope="row">${label}</th>${idx.map((k) => `<td>${cell(k)}</td>`).join("")}</tr>`).join("");
-  body.innerHTML = `<div class="st-scroll"><table class="st-wx"><thead><tr><th></th>${th}</tr></thead><tbody>${tr}</tbody></table></div>`
-    + `<p class="st-note">Forecast run ${w.run}: NOAA GFS and GFS-Wave, ECMWF IFS (CC BY 4.0) via Open-Meteo.</p>`;
+  body.innerHTML = `<div class="st-scroll"><table class="st-wx"><thead><tr><th></th>${th}</tr></thead><tbody>${tr}</tbody></table></div><p class="st-note"></p>`;
+  body.querySelector(".st-note")!.textContent = `Forecast run ${w.run}: NOAA GFS and GFS-Wave, ECMWF IFS (CC BY 4.0) via Open-Meteo.`;
   section.hidden = false;
 }
 
 // --- other months and CSV ------------------------------------------------------------------------
 
-function setupMonths(data: PageData, unit: () => Unit): void {
+function setupMonths(data: PageData, unit: () => Unit): Promise<TideTable | null> {
+  let table: Promise<TideTable | null> | null = null;
+  const load = () => (table ??= fetch(`${TIDES_BASE}/${data.path}.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null));
   const select = document.querySelector<HTMLSelectElement>("select[data-month]");
   const csv = document.querySelector<HTMLButtonElement>("button[data-csv]");
-  if (!select || !csv) return;
+  if (!select || !csv) return load();
   const current = data.days[0].date.slice(0, 7);
   const out = document.createElement("div");
   out.className = "st-other";
   select.closest("p")?.after(out);
-  let table: Promise<TideTable | null> | null = null;
-  const load = () => (table ??= fetch(`${TIDES_BASE}/${data.path}.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null));
   const monthName = (ym: string) => new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })
     .format(new Date(`${ym}-15T00:00:00Z`));
 
@@ -207,6 +250,7 @@ function setupMonths(data: PageData, unit: () => Unit): void {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
+  return load();
 }
 
 function monthTable(rows: MonthTurn[], unit: Unit, title: string): HTMLElement {

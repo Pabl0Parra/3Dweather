@@ -1,5 +1,5 @@
 // Other months and CSV from the station's 25-month tide table, tides/{path}.json.
-import type { Unit } from "./format";
+import { addDays, localMidnight, type Turn, type Unit } from "./format";
 
 export type TideTable = {
   v: 1; id: string; source: string; donor: string | null; datum: string;
@@ -46,4 +46,21 @@ export function monthTurns(table: TideTable, ym: string, tz: string): MonthTurn[
 export function toCsv(rows: MonthTurn[], unit: Unit): string {
   const head = `date,time,tide,height_${unit}\n`;
   return head + rows.map((r) => `${r.date},${r.hm},${r.hi ? "high" : "low"},${unit === "ft" ? (r.h * FT).toFixed(1) : r.h.toFixed(2)}\n`).join("");
+}
+
+/** One local day from the table: its turns and length, and the turns of the days either side, all in
+ * minutes from the day's local midnight (for the chart). Used when the visitor's today is not in the
+ * embedded month (the page was built before the month turned over in the station's zone). */
+export function dayFromTable(table: TideTable, date: string, tz: string):
+  { date: string; day_minutes: number; tides: Turn[]; around: Turn[] } {
+  const m0 = localMidnight(tz, date), m1 = localMidnight(tz, addDays(date, 1));
+  const lo = localMidnight(tz, addDays(date, -1)), hi = localMidnight(tz, addDays(date, 2));
+  const from = Date.parse(table.from);
+  const around: Turn[] = [];
+  for (const [min, cm, k] of table.turns) {
+    const t = from + min * 60000;
+    if (t >= lo && t < hi) around.push([local(tz, t).hm, Math.round((t - m0) / 60000), cm / 100, k]);
+  }
+  const n = Math.round((m1 - m0) / 60000);
+  return { date, day_minutes: n, tides: around.filter((x) => x[1] >= 0 && x[1] < n), around };
 }

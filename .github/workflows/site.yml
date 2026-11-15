@@ -21,7 +21,8 @@ on:
 
 concurrency:
   group: site
-  cancel-in-progress: true
+  # A month's first run computes its sun and moon (~45 min): queue, never cancel it.
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -83,7 +84,8 @@ jobs:
             exit "$code"
           fi
       # JPL DE421 (17 MB) once; each month's sun and moon data once per month (the first run of a
-      # month computes it, about 15 minutes on 4 cores; later days reuse it).
+      # month computes it, about 45 minutes on 4 cores; later days reuse it). Last month's store
+      # seeds the 1st, when western zones are still on the previous month.
       - uses: actions/cache@v4
         with:
           path: sky-cache
@@ -94,13 +96,18 @@ jobs:
         with:
           path: sky-months
           key: sky-months-${{ steps.month.outputs.month }}-${{ github.run_id }}
-          restore-keys: sky-months-${{ steps.month.outputs.month }}-
+          restore-keys: |
+            sky-months-${{ steps.month.outputs.month }}-
+            sky-months-
       - name: Station data
+        id: sd
         run: |
-          if [ ! -f "$RUNNER_TEMP/tide-constants.json" ]; then exit 0; fi
-          python -m pipeline station-data --catalogue "$RUNNER_TEMP/stations.json" --constants "$RUNNER_TEMP/tide-constants.json" --out "$RUNNER_TEMP/station-data" --sky-cache sky-cache --sky-store sky-months --workers 4
+          if [ ! -f "$RUNNER_TEMP/tide-constants.json" ]; then echo "computed=0" >> "$GITHUB_OUTPUT"; exit 0; fi
+          python -m pipeline station-data --catalogue "$RUNNER_TEMP/stations.json" --constants "$RUNNER_TEMP/tide-constants.json" --out "$RUNNER_TEMP/station-data" --sky-cache sky-cache --sky-store sky-months --workers 4 | tee "$RUNNER_TEMP/station-data.log"
+          echo "computed=$(sed -n 's/.*, \([0-9]*\) sky months computed.*/\1/p' "$RUNNER_TEMP/station-data.log")" >> "$GITHUB_OUTPUT"
+      # Save only when this run computed months: one cache entry per month, not one per day.
       - uses: actions/cache/save@v4
-        if: always()
+        if: steps.sd.outputs.computed != '' && steps.sd.outputs.computed != '0'
         with:
           path: sky-months
           key: sky-months-${{ steps.month.outputs.month }}-${{ github.run_id }}

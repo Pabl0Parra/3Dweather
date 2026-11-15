@@ -134,3 +134,12 @@ def test_sky_months_are_cached_between_runs(tmp_path, monkeypatch):
     a = json.loads((tmp_path / "a/us/new-york/the-battery.json").read_text(encoding="utf-8"))
     b = json.loads((tmp_path / "b/us/new-york/the-battery.json").read_text(encoding="utf-8"))
     assert a["days"][0]["sunrise"] == b["days"][0]["sunrise"] and b["today"] == "2026-11-15"
+
+
+def test_sky_store_drops_months_no_longer_needed(tmp_path):
+    from pipeline.station_pages import _save_months, prune_store
+    store = tmp_path / "sky-months"
+    for m in (date(2026, 9, 1), date(2026, 10, 1), date(2026, 11, 1)):
+        _save_months(store, m, {"k": []})
+    prune_store(store, {date(2026, 11, 1)}, keep_previous=True)
+    assert sorted(p.name for p in store.iterdir()) == ["2026-10.json.gz", "2026-11.json.gz"]

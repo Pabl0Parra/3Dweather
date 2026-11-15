@@ -51,3 +51,38 @@ export function dayLabel(date: string): string {
   return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" })
     .format(new Date(Date.UTC(y, m - 1, d)));
 }
+
+function offsetMinutes(tz: string, t: number): number {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+  const wall = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour) % 24, Number(p.minute));
+  return Math.round((wall - Math.floor(t / 60000) * 60000) / 60000);
+}
+
+/** The instant (ms) of local midnight starting `date` (YYYY-MM-DD) in `tz`. */
+export function localMidnight(tz: string, date: string): number {
+  const [y, m, d] = date.split("-").map(Number);
+  const guess = Date.UTC(y, m - 1, d);
+  const first = guess - offsetMinutes(tz, guess) * 60000;
+  return guess - offsetMinutes(tz, first) * 60000;
+}
+
+export function addDays(date: string, n: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+const span = (p: [Hm, Hm]) => `${p[0] ? p[0][0] : "–"}–${p[1] ? p[1][0] : "–"}`;
+
+/** The "Sun and moon" facts for one day, as printed (build time and browser alike). */
+export function skyFacts(d: StationDay): Record<string, string> {
+  const t = (x: Hm) => (x ? x[0] : "–");
+  return {
+    sunrise: t(d.sunrise), sunset: t(d.sunset), daylight: `${d.day_length_h.toFixed(1)} h`,
+    moon: `${d.moon.name}, ${d.moon.illum}% lit`, moonrise: t(d.moon.rise), moonset: t(d.moon.set),
+    coef: d.coef == null ? "–" : `${d.coef} · ${coefLabel(d.coef)}`,
+    major: d.solunar.major.map(span).join(", ") || "–", minor: d.solunar.minor.map(span).join(", ") || "–",
+    golden: d.golden.map(span).join(", ") || "–",
+  };
+}

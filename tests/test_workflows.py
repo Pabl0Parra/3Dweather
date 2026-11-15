@@ -131,7 +131,11 @@ def test_site_rebuilds_daily_with_station_data():
     assert "--key catalogue/tide-constants.json" in t and "secrets.R2_PRIVATE_BUCKET" in t
     # DE421 and each month's sky data are kept between runs.
     assert "path: sky-cache" in t and "path: sky-months" in t
-    assert "actions/cache/save@v4" in t and "if: always()" in t
+    assert "actions/cache/save@v4" in t
+    # Save only when months were computed (no duplicate entries); fall back to last month's store.
+    assert "steps.sd.outputs.computed != '0'" in t and "restore-keys: |" in t and "\n            sky-months-\n" in t
+    # A cold month takes ~45 min: a push must not cancel it.
+    assert "cancel-in-progress: false" in t
     sd = t.index("python -m pipeline station-data")
     assert sd < t.index("npm run build")
     assert "--sky-store sky-months" in t and '--out "$RUNNER_TEMP/station-data"' in t

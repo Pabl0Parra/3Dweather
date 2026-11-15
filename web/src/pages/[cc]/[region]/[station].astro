@@ -6,7 +6,7 @@ import "../../../styles/globe.css";
 import "../../../styles/station.css";
 import SearchBox from "../../../components/SearchBox.astro";
 import { loadStationData, loadStations, makeIndex, nearbyStations, regionFor, type StationRecord } from "../../../stations/catalogue";
-import { coefLabel, dayLabel, height, type Hm, type StationData } from "../../../station/format";
+import { dayLabel, height, skyFacts, type Hm, type StationData } from "../../../station/format";
 
 export function getStaticPaths() {
   const all = loadStations();
@@ -35,7 +35,10 @@ const distance = (k: number) => (k < 10 ? `${k.toFixed(1)} km` : `${Math.round(k
 const ti = data ? Math.max(0, data.days.findIndex((d) => d.date === data.today)) : 0;
 const today = data?.days[ti];
 const t = (x: Hm) => (x ? x[0] : "–");
-const span = (p: [Hm, Hm]) => `${t(p[0])}–${t(p[1])}`;
+const sky = today ? skyFacts(today) : null;
+const SKY_ROWS: [string, string][] = [["sunrise", "Sunrise"], ["sunset", "Sunset"], ["daylight", "Daylight"], ["moon", "Moon"],
+  ["moonrise", "Moonrise"], ["moonset", "Moonset"], ["coef", "Coefficient"], ["major", "Solunar major"],
+  ["minor", "Solunar minor"], ["golden", "Golden hour"]];
 const json = data ? JSON.stringify({ ...data, path: s.path, cc: s.country_code.toLowerCase(), region: s.region_slug })
   .replace(/</g, "\\u003c") : "";
 ---
@@ -98,18 +101,9 @@ const json = data ? JSON.stringify({ ...data, path: s.path, cc: s.country_code.t
 
       {today && (
         <section class="st-sky" aria-labelledby="st-h-sky">
-          <h2 id="st-h-sky">Sun and moon</h2>
+          <h2 id="st-h-sky">Sun and moon <span class="st-day" data-sky-day>{dayLabel(today.date)}</span></h2>
           <dl class="st-facts">
-            <div><dt>Sunrise</dt><dd>{t(today.sunrise)}</dd></div>
-            <div><dt>Sunset</dt><dd>{t(today.sunset)}</dd></div>
-            <div><dt>Daylight</dt><dd>{today.day_length_h.toFixed(1)} h</dd></div>
-            <div><dt>Moon</dt><dd>{today.moon.name}, {today.moon.illum}% lit</dd></div>
-            <div><dt>Moonrise</dt><dd>{t(today.moon.rise)}</dd></div>
-            <div><dt>Moonset</dt><dd>{t(today.moon.set)}</dd></div>
-            {today.coef != null && <div><dt>Coefficient</dt><dd>{today.coef} · {coefLabel(today.coef)}</dd></div>}
-            <div><dt>Solunar major</dt><dd>{today.solunar.major.map(span).join(", ") || "–"}</dd></div>
-            <div><dt>Solunar minor</dt><dd>{today.solunar.minor.map(span).join(", ") || "–"}</dd></div>
-            <div><dt>Golden hour</dt><dd>{today.golden.map(span).join(", ") || "–"}</dd></div>
+            {SKY_ROWS.map(([key, label]) => <div><dt>{label}</dt><dd data-sky={key}>{sky![key]}</dd></div>)}
           </dl>
         </section>
       )}

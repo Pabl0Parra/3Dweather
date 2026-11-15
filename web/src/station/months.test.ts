@@ -28,3 +28,24 @@ describe("other months", () => {
     expect(toCsv(rows, "ft")).toBe("date,time,tide,height_ft\n2026-11-01,01:30,low,-2.6\n");
   });
 });
+
+describe("a day from the tide table (visitor's today outside the embedded month)", () => {
+  it("finds local midnight across a DST change", async () => {
+    const { localMidnight } = await import("./format");
+    expect(new Date(localMidnight("America/New_York", "2026-12-01")).toISOString()).toBe("2026-12-01T05:00:00.000Z");
+    expect(new Date(localMidnight("America/New_York", "2026-07-01")).toISOString()).toBe("2026-07-01T04:00:00.000Z");
+    expect(new Date(localMidnight("Pacific/Auckland", "2026-12-01")).toISOString()).toBe("2026-11-30T11:00:00.000Z");
+  });
+
+  it("gives the day's turns, its length and its neighbours in minutes from its midnight", async () => {
+    const { dayFromTable } = await import("./months");
+    const from = Date.UTC(2026, 10, 1);
+    const at = (iso: string) => Math.round((Date.parse(iso) - from) / 60000);
+    const t: TideTable = { ...table, from: "2026-11-01T00:00:00Z", to: "2027-01-01T00:00:00Z",
+      turns: [[at("2026-11-01T03:00:00Z"), 100, 1], [at("2026-11-01T09:00:00Z"), -100, 0], [at("2026-11-01T15:00:00Z"), 90, 1]] };
+    const d = dayFromTable(t, "2026-11-01", "America/New_York");
+    expect(d.day_minutes).toBe(1500); // clocks go back
+    expect(d.tides).toEqual([["04:00", 300, -1, 0], ["10:00", 660, 0.9, 1]]); // 23:00 is the day before
+    expect(d.around.map((x) => x[1])).toEqual([-60, 300, 660]);
+  });
+});

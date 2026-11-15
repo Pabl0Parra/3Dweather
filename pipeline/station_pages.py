@@ -133,6 +133,18 @@ def _save_months(store: Path, first: date, months: dict[str, list]) -> None:
     part.replace(p)
 
 
+def prune_store(store: Path, needed: set[date], keep_previous: bool = True) -> None:
+    """Delete sky months no longer needed, so the cached store does not grow month after month.
+    The month before the earliest needed one stays (it seeds the 1st of a month in western zones)."""
+    keep = {f"{m:%Y-%m}" for m in needed}
+    if keep_previous and needed:
+        first = min(needed)
+        keep.add(f"{(first - timedelta(days=1)):%Y-%m}")
+    for p in Path(store).glob("*.json.gz"):
+        if p.name[:7] not in keep:
+            p.unlink()
+
+
 def write_station_data(catalogue: list[dict], constants: dict, now: datetime, out: Path, sky_cache: Path,
                        workers: int = 1, sky_store: Path | None = None) -> dict:
     stations = constants["stations"]
@@ -176,6 +188,8 @@ def write_station_data(catalogue: list[dict], constants: dict, now: datetime, ou
     if sky_store is not None and computed:
         for m, data in stored.items():
             _save_months(sky_store, m, data)
+    if sky_store is not None and Path(sky_store).exists():
+        prune_store(sky_store, set(stored))
 
     # Pass 2: one file per station.
     del stored
