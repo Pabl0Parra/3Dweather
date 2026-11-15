@@ -300,3 +300,18 @@ def test_regional_hours_need_hourly_gfs(tmp_path):
     src.gfs.times = [t for t in src.gfs.times if t != RUN + 40 * H]  # hour 40 (14 Nov 22:00) is not a globe frame
     with pytest.raises(RunIncomplete, match="gfs 2026-11-14T22:00Z"):
         build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=src, ice=NO_ICE)
+
+
+def test_build_samples_every_station_into_region_files(tmp_path):
+    recs = [{"id": "g1", "latitude": 40.7, "longitude": -74.0, "country_code": "US", "region_slug": "new-york"}]
+    out = build_run(RUN, tmp_path / "c", tmp_path / "wx", sources=fake_sources(), ice=NO_ICE, stations=recs)
+    d = json.loads((out / "stations" / "us" / "new-york.json").read_text(encoding="utf-8"))
+    s = d["stations"]["g1"]
+    assert d["n"] == 57 and d["step_h"] == 3 and d["start"] == iso(RUN)
+    assert s["t"][0] == 150 and s["ws"][0] == round(np.hypot(10, -5) * 10) and s["p"][0] == 10150
+    assert s["wh"][0] == 200 and s["wp"][0] == 100 and s["wdir"][0] == 270 and s["sst"][0] == 200
+    assert s["g"][0] == 200 and s["r"][1] == 20 and s["c"][1] is not None
+
+
+def test_build_without_stations_writes_no_station_files(built):
+    assert not (built / "stations").exists()

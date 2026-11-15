@@ -168,11 +168,12 @@ def publish_run(store: Store, run_dir: Path, run: datetime, built: datetime) -> 
     """Upload a complete run folder, then point wx/latest.json at it. If any upload
     fails, latest.json still names the previous run."""
     prefix = f"wx/{run:%Y%m%d%H}/"
-    files = sorted(p for p in Path(run_dir).iterdir() if p.is_file())
-    if not any(p.name == "globe.json" for p in files):
+    run_dir = Path(run_dir)
+    if not (run_dir / "globe.json").is_file():
         raise RuntimeError(f"{run_dir} has no globe.json: not a complete run")
-    for p in files:
-        store.put_file(prefix + p.name, p, content_type(p), RUN_CACHE)
+    files = sorted((p for p in run_dir.rglob("*") if p.is_file()), key=lambda p: p.name == "globe.json")
+    for p in files:  # station files and sprites first, globe.json last
+        store.put_file(prefix + p.relative_to(run_dir).as_posix(), p, content_type(p), RUN_CACHE)
     latest = {"run": _iso(run), "dir": f"{run:%Y%m%d%H}", "built": built.strftime("%Y-%m-%dT%H:%M:%SZ")}
     store.put_bytes("wx/latest.json", json.dumps(latest, separators=(",", ":")).encode(), "application/json",
                     LATEST_CACHE)

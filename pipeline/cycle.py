@@ -25,7 +25,8 @@ def due_run(now: datetime) -> datetime:
 def cycle(now: datetime, cache_dir: Path, out_dir: Path, store: Store, *, run: datetime | None = None,
           build: Callable | None = None, sleep: Callable[[float], None] = time.sleep,
           clock: Callable[[], float] = time.monotonic,
-          wait: timedelta = timedelta(minutes=90), poll: timedelta = timedelta(minutes=10)) -> int:
+          wait: timedelta = timedelta(minutes=90), poll: timedelta = timedelta(minutes=10),
+          stations: list[dict] | None = None) -> int:
     """0: published (or already current); 2: inputs still incomplete `wait` after the first
     attempt (wall clock, build attempts included)."""
     build = build or build_run
@@ -37,7 +38,7 @@ def cycle(now: datetime, cache_dir: Path, out_dir: Path, store: Store, *, run: d
     start = clock()
     while True:
         try:
-            folder = build(run, cache_dir, out_dir, prune=True)
+            folder = build(run, cache_dir, out_dir, prune=True, **({"stations": stations} if stations else {}))
             break
         except RunIncomplete as exc:
             waited = clock() - start

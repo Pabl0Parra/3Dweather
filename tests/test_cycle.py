@@ -129,3 +129,10 @@ def test_the_wait_is_wall_clock_including_build_attempts(tmp_path):
     code = cycle(NOW, tmp_path / "cache", tmp_path / "out", DirStore(tmp_path / "bucket"), build=slow_build,
                  sleep=sleep, clock=lambda: now[0])
     assert code == 2 and len(build.calls) == 2  # 0-50 min, sleep to 60, 60-110 min: past the deadline
+
+
+def test_cycle_passes_the_stations_to_the_build(tmp_path):
+    store, build = DirStore(tmp_path / "bucket"), FakeBuild()
+    recs = [{"id": "g1"}]
+    cycle(NOW, tmp_path / "cache", tmp_path / "out", store, build=build, sleep=lambda s: None, stations=recs)
+    assert build.calls[0][1]["stations"] is recs

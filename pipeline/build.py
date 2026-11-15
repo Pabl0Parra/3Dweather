@@ -19,6 +19,7 @@ from .regional import RegionalBuilder, hours_for_frame, region_hours
 from .regrid import regrid
 from .sources.openmeteo import OpenMeteoRun, RunIncomplete, resolve_daily_run
 from .static_assets import ice_mask
+from .station_wx import StationSampler
 from .sprites import CHUNKS, COLS, EVERY, FRAMES, HOURS, chunk_frames, pack_chunk, save_sprite
 from .storms import frame_s, storm_index
 from .waves import frame_time, wave_frame, wave_peak
@@ -146,11 +147,22 @@ def _atmosphere(s: RunSources, precip: _GfsPrecip, run: datetime, t: datetime) -
             "rain": rain_rate(precip, t)}
 
 
+def _sample_atmosphere(sampler: StationSampler, s: RunSources, f: dict, t: datetime) -> None:
+    """Temperature and wind at the GFS 13 km cell; the rest from the globe fields."""
+    sampler.add(t, "t", s.gfs.field("temperature_2m", t), s.gfs.source_grid)
+    sampler.add_wind(t, s.gfs.field("wind_u_component_10m", t), s.gfs.field("wind_v_component_10m", t),
+                     s.gfs.source_grid)
+    for name, key in (("g", "gust"), ("r", "rain"), ("c", "cloud"), ("p", "pressure")):
+        if f[key] is not None:
+            sampler.add(t, name, f[key], GLOBE)
+
+
 def build_run(run: datetime, cache_dir: Path, out_dir: Path, sources: RunSources | None = None,
-              ice: np.ndarray | None = None, prune: bool = False) -> Path:
+              ice: np.ndarray | None = None, prune: bool = False, stations: list[dict] | None = None) -> Path:
     """Write out_dir/<YYYYMMDDHH>/ with globe-{a,b,t,s,w}0..6.webp, globe-c.webp and globe.json.
     Nothing is written unless the whole run is available; the folder appears only when complete.
-    prune: delete each downloaded input once no later frame needs it (spec §5; CI disk)."""
+    prune: delete each downloaded input once no later frame needs it (spec §5; CI disk).
+    stations: catalogue records; when given, also writes stations/{cc}/{region}.json (spec §5 step 6)."""
     s = sources or open_sources(run, cache_dir)
     _check_complete(s, run)
     if ice is None:  # Natural Earth glaciated areas, cached next to the model inputs
@@ -163,6 +175,7 @@ def build_run(run: datetime, cache_dir: Path, out_dir: Path, sources: RunSources
         peaks: dict[str, list] = {k: [] for k in ("wind", "rain", "hot", "cold", "gust", "low", "wave")}
         precip = _GfsPrecip(s.gfs)
         regional = RegionalBuilder(s.gfs, run)
+        sampler = StationSampler(stations, [frame_time(run, j) for j in range(FRAMES)]) if stations else None
         for chunk in range(len(CHUNKS)):
             sheets: dict[str, list] = {f: [] for f in "abtsw"}
             for j in chunk_frames(chunk):
@@ -170,10 +183,15 @@ def build_run(run: datetime, cache_dir: Path, out_dir: Path, sources: RunSources
                 for th in hours_for_frame(run, t):
                     regional.add_hour(th)
                 height, period, direction = (s.wave.field(v, t) for v in WAVE_VARS)
+                if sampler:
+                    for name, a in (("wh", height), ("wp", period), ("wdir", direction)):
+                        sampler.add(t, name, a, s.wave.source_grid, sea=True)
                 sheets["w"].append(wave_frame(height, period, direction, s.wave.source_grid))
                 peaks["wave"].append(wave_peak(height, s.wave.source_grid))
                 del height, period, direction
                 f = _atmosphere(s, precip, run, t)
+                if sampler:
+                    _sample_atmosphere(sampler, s, f, t)
                 sheets["a"].append(frame_a(f))
                 sheets["b"].append(frame_b(f))
                 sheets["t"].append(frame_t(f))
@@ -197,6 +215,8 @@ def build_run(run: datetime, cache_dir: Path, out_dir: Path, sources: RunSources
             t = ocean_time(run, k)
             u, v = (s.cur.field(name, t) for name in ("ocean_u_current", "ocean_v_current"))
             sst = s.sst.field("sea_surface_temperature", t)
+            if sampler:
+                sampler.add(t, "sst", sst, s.sst.source_grid, sea=True)
             ocean.append(ocean_frame(u, v, sst, s.cur.source_grid))
             gu, gv = (regrid(a, s.cur.source_grid, GLOBE) for a in (u, v))
             # Ocean peaks only count open sea: cells whose source neighbours are all sea.
@@ -209,6 +229,8 @@ def build_run(run: datetime, cache_dir: Path, out_dir: Path, sources: RunSources
                 s.sst.evict_before(cut)
         save_sprite(pack_ocean(ocean), tmp / "globe-c.webp")
         regional.write(tmp, _iso(run))
+        if sampler:
+            sampler.write(tmp, _iso(run))
 
         manifest = {
             "run": _iso(run), **GLOBE.manifest_fields(),

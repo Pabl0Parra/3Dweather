@@ -52,6 +52,11 @@ jobs:
           fi
           ARGS=(--cache "$RUNNER_TEMP/cache" --out "$RUNNER_TEMP/wx")
           if [ -n "$RUN" ]; then ARGS+=(--run "$RUN"); fi
+          # Station weather (spec §5 step 6) when the catalogue is in the bucket; the globe
+          # and regional maps are built either way.
+          if [ -n "$R2_BUCKET" ] && python -m pipeline get --key catalogue/stations.json --out "$RUNNER_TEMP/stations.json" --store r2; then
+            ARGS+=(--catalogue "$RUNNER_TEMP/stations.json")
+          fi
           if [ -n "$R2_BUCKET" ]; then
             python -m pipeline cycle "${ARGS[@]}" --store r2
           else

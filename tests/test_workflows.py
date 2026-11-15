@@ -114,3 +114,9 @@ def test_tides_run_monthly_and_upload_a_day_cache():
     assert "--key catalogue/tide-constants.json" in t
     assert "python -m pipeline tide-tables --catalogue" in t
     assert "--prefix tides --max-age 86400 --store r2" in t
+
+
+def test_forecast_samples_the_catalogue_when_it_exists():
+    t = text("forecast.yml")
+    assert "python -m pipeline get --key catalogue/stations.json" in t
+    assert 'ARGS+=(--catalogue "$RUNNER_TEMP/stations.json")' in t
