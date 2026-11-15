@@ -61,7 +61,7 @@ const json = data ? JSON.stringify({ ...data, path: s.path, cc: s.country_code.t
     </header>
     <main class="station-page" data-station={s.id}>
       <nav class="st-crumbs" aria-label="Breadcrumb">
-        <span>{country(s.country_code)}</span> / <span>{s.region_name}</span>
+        <a href={`/${s.country_code.toLowerCase()}`}>{country(s.country_code)}</a> / <a href={`/${s.country_code.toLowerCase()}/${s.region_slug}`}>{s.region_name}</a>
       </nav>
       <h1>{s.name}</h1>
       <p class="st-lede">{kind} in {where}.</p>

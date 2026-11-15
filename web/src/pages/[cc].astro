@@ -1,0 +1,54 @@
+---
+// Country page: its regions (filterable), popular places and its regional weather map.
+import SiteLayout from "../components/SiteLayout.astro";
+import { COUNTRY_MAPS, browseTree, loadCountries, loadRanks, popular } from "../stations/browse";
+import { loadStations } from "../stations/catalogue";
+import { regionBySlug } from "../region/regions";
+import { breadcrumbs } from "../seo/jsonld";
+
+export function getStaticPaths() {
+  const ranks = loadRanks();
+  return browseTree(loadStations(), loadCountries(), ranks).map((c) => ({ params: { cc: c.cc.toLowerCase() }, props: { c, ranks } }));
+}
+const { c, ranks } = Astro.props;
+const all = c.regions.flatMap((r) => r.stations);
+const top = popular(all, ranks, 8);
+const maps = (COUNTRY_MAPS[c.cc] ?? []).map(regionBySlug).filter((r) => r != null);
+const path = `/${c.cc.toLowerCase()}`;
+const site = (process.env.SITE_URL || "https://example.invalid").replace(/\/$/, "");
+const one = c.regions.length === 1;
+---
+<SiteLayout title={`${c.name} tide times · 3Dweather`} path={path} nav="tides"
+  description={`Tide times, sun and moon for ${all.length} coastal places in ${c.name}.`}
+  jsonld={[breadcrumbs(site, [["Home", "/"], [c.name, path]])]}>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> / <a href="/stations">All places</a> / {c.name}</nav>
+  <h1>{c.name} tide times</h1>
+  <p class="lede">{all.length.toLocaleString("en")} coastal {all.length === 1 ? "place" : "places"}{one ? "" : ` in ${c.regions.length} regions`}.</p>
+
+  <section aria-labelledby="h-popular">
+    <h2 id="h-popular">Popular places</h2>
+    <ul class="cards popular">
+      {top.map((s) => <li><a href={`/${s.path}`}>{s.name}<small>{s.region_name}{s.type === "gauge" ? " · tide gauge" : ""}</small></a></li>)}
+    </ul>
+  </section>
+
+  <section aria-labelledby="h-regions">
+    <h2 id="h-regions">{one ? "Region" : "Regions"}</h2>
+    {c.regions.length > 8 && <input class="filter" type="search" placeholder="Filter regions" aria-label="Filter regions" data-filter=".regions li" />}
+    <ul class="cards regions">
+      {c.regions.map((r) => <li><a href={`${path}/${r.slug}`}>{r.name}<small>{r.stations.length} {r.stations.length === 1 ? "place" : "places"}</small></a></li>)}
+    </ul>
+  </section>
+
+  {maps.length > 0 && (
+    <section aria-labelledby="h-maps">
+      <h2 id="h-maps">Weather maps</h2>
+      <ul class="cards">{maps.map((m) => <li><a href={`/weather-map/${m!.slug}`}>{m!.title}<small>Wind, rain and clouds, 3 days</small></a></li>)}</ul>
+    </section>
+  )}
+</SiteLayout>
+<script>
+  import { mountFilter } from "../browse/filter";
+  document.querySelectorAll<HTMLInputElement>("input[data-filter]").forEach((i) =>
+    mountFilter(i, [...document.querySelectorAll<HTMLElement>(i.dataset.filter!)]));
+</script>

@@ -68,3 +68,9 @@ export function popular(list: StationRecord[], ranks: Map<string, number>, n: nu
   return [...list].sort((a, b) => (ranks.get(b.path) ?? 0) - (ranks.get(a.path) ?? 0)
     || Number(b.type === "gauge") - Number(a.type === "gauge") || byName(a, b)).slice(0, n);
 }
+
+/** Regional weather maps for a country (the 12 regions of phase 6). */
+export const COUNTRY_MAPS: Record<string, string[]> = {
+  US: ["united-states"], GB: ["united-kingdom", "scotland"], IE: ["ireland"], IN: ["india"], PH: ["philippines"],
+  AU: ["australia"], NZ: ["new-zealand"], CA: ["canada"], ZA: ["south-africa"],
+};
