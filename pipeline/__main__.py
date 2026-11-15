@@ -11,6 +11,7 @@ python -m pipeline get --key KEY --out FILE --store (r2|dir:PATH)
 python -m pipeline model-constants --catalogue STATIONS_JSON --eot20 ZIP_OR_DIR --out FILE
 python -m pipeline tide-constants --catalogue STATIONS_JSON --noaa NOAA_LIST --noaa-cache DIR
                                   --model FILE [--model FILE ...] --out FILE
+python -m pipeline tide-tables --catalogue STATIONS_JSON --constants FILE [--month YYYY-MM] --out DIR [--workers N]
 
 Stores: r2 (bucket R2_BUCKET), r2:BUCKET (another bucket, same account) or dir:PATH.
 """
@@ -33,6 +34,13 @@ def _run_time(text: str) -> datetime:
         return datetime.strptime(text, "%Y%m%d%H").replace(tzinfo=timezone.utc)
     except ValueError:
         raise argparse.ArgumentTypeError(f"run must look like 2026111306, got {text!r}")
+
+
+def _month(text: str):
+    try:
+        return datetime.strptime(text, "%Y-%m").date()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"month must look like 2026-11, got {text!r}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -84,7 +92,22 @@ def main(argv: list[str] | None = None) -> int:
     tc.add_argument("--model", action="append", default=[], type=Path,
                     help="model constants file; the first with constants wins per station; missing files are skipped")
     tc.add_argument("--out", required=True, type=Path)
+    tt = sub.add_parser("tide-tables", help="tides/{path}.json for every station, 12 months either side of a month")
+    tt.add_argument("--catalogue", required=True, type=Path, help="stations.json")
+    tt.add_argument("--constants", required=True, type=Path, help="tide-constants.json")
+    tt.add_argument("--month", type=_month, default=None, help="YYYY-MM (default: this month, UTC)")
+    tt.add_argument("--out", required=True, type=Path)
+    tt.add_argument("--workers", type=int, default=1)
     args = parser.parse_args(argv)
+
+    if args.command == "tide-tables":
+        import json
+        from .tide_tables import write_tables
+        month = args.month or datetime.now(timezone.utc).date().replace(day=1)
+        r = write_tables(json.loads(args.catalogue.read_text(encoding="utf-8")),
+                         json.loads(args.constants.read_text(encoding="utf-8")), month, args.out, workers=args.workers)
+        print(f"{r['written']} tables, {r['without']} stations without tides -> {args.out}")
+        return 0
 
     if args.command == "model-constants":
         import json

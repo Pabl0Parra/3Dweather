@@ -123,15 +123,17 @@ def predict(times: np.ndarray, cons: list[tuple[str, float, float]]) -> np.ndarr
     """Heights (m) at datetime64 UTC times for constituents (name, amplitude m, Greenwich phase deg)."""
     times = np.asarray(times).astype("datetime64[s]")
     T, s, h, p, p1, _ = _elements(times)
-    years = times.astype("datetime64[Y]")
+    years, which = np.unique(times.astype("datetime64[Y]"), return_inverse=True)
     mid = years.astype("datetime64[D]") + np.timedelta64(182, "D")  # 2 July (1 July in leap years: same to 1 day)
     _, _, _, p_mid, _, n_mid = _elements(mid.astype("datetime64[s]"))
-    nodal = _nodal(n_mid, p_mid)
+    nodal = _nodal(n_mid, p_mid)  # once per calendar year, spread to every time below
+    which = which.reshape(times.shape)
     out = np.zeros(times.shape, dtype=np.float64)
     for name, amp, phase in cons:
         c = CONSTITUENTS[name]
         a, b, cc, d, e = c.doodson
         f, u = nodal[c.nodal]
+        f, u = np.broadcast_to(f, years.shape)[which], np.broadcast_to(u, years.shape)[which]
         v = a * T + b * s + cc * h + d * p + e * p1 + c.offset
         out += f * amp * np.cos((v + u - phase) * D2R)
     return out
@@ -176,20 +178,20 @@ def extrema(start: datetime, end: datetime, cons, step_min: int = 6) -> list[tup
 
 def _drop_ripples(turns: list[list]) -> list[list]:
     """Remove adjacent high/low pairs that are too close in time or height (a stand, not a tide)."""
-    changed = True
-    while changed and len(turns) > 2:
-        changed = False
-        worst, worst_i = None, -1
-        for i in range(len(turns) - 1):
-            a, b = turns[i], turns[i + 1]
-            gap_h = float((b[0] - a[0]).astype(np.float64)) / 3600.0
-            rng = abs(b[1] - a[1])
-            if gap_h < MIN_GAP_H or rng < MIN_RANGE_M:
-                if worst is None or rng < worst:
-                    worst, worst_i = rng, i
-        if worst_i >= 0:
-            del turns[worst_i:worst_i + 2]
-            changed = True
+    if len(turns) > 2:
+        sec = np.array([x[0] for x in turns]).astype("datetime64[s]").astype(np.float64)
+        hgt = np.array([x[1] for x in turns], dtype=np.float64)
+        keep = np.ones(len(turns), dtype=bool)
+        while keep.sum() > 2:
+            idx = np.nonzero(keep)[0]
+            gap_h = np.diff(sec[idx]) / 3600.0
+            rng = np.abs(np.diff(hgt[idx]))
+            bad = (gap_h < MIN_GAP_H) | (rng < MIN_RANGE_M)
+            if not bad.any():
+                break
+            i = int(np.argmin(np.where(bad, rng, np.inf)))  # the smallest offending pair goes first
+            keep[idx[i]] = keep[idx[i + 1]] = False
+        turns = [x for x, k in zip(turns, keep) if k]
     # Two of a kind in a row after removals: keep the more extreme one.
     out: list[list] = []
     for x in turns:

@@ -98,3 +98,14 @@ def test_site_fails_on_a_broken_catalogue_download_and_follows_static_assets():
     assert "github.event.workflow_run.conclusion == 'success'" in t
     # Exit 3 (no catalogue yet) builds without stations; any other failure stops the job.
     assert 'if [ "$code" -eq 3 ]; then' in t and 'exit "$code"' in t
+
+
+def test_tides_run_monthly_and_upload_a_day_cache():
+    t = text("tides.yml")
+    assert "cron: '0 2 1 * *'" in t and "workflow_dispatch:" in t
+    assert "python -m pipeline get --key catalogue/stations.json" in t
+    # tide-constants.json from the private bucket when there is one (FES2022), else next to the catalogue.
+    assert '--key tides-private/tide-constants.json' in t and '--store "r2:$R2_PRIVATE_BUCKET"' in t
+    assert "--key catalogue/tide-constants.json" in t
+    assert "python -m pipeline tide-tables --catalogue" in t
+    assert "--prefix tides --max-age 86400 --store r2" in t

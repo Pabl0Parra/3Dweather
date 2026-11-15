@@ -239,3 +239,23 @@ def test_store_can_name_another_bucket(monkeypatch):
     monkeypatch.setattr(pub, "s3_store_from_env", lambda bucket=None: seen.setdefault("b", bucket))
     pub.store_from_arg("r2:private-tides")
     assert seen["b"] == "private-tides"
+
+
+def test_fetch_noaa_takes_null_lists_as_empty(tmp_path):
+    def nulls(url, dest):
+        body = {"HarmonicConstituents": HARCON["HarmonicConstituents"]} if "harcon" in url else {"datums": None}
+        if "8000000" in url:
+            body = {"HarmonicConstituents": None}
+        dest.write_text(json.dumps(body), encoding="utf-8")
+    got = fetch_noaa([{"id": "1", "type": "R"}, {"id": "8000000", "type": "R"}], tmp_path, fetch=nulls, pause=0)
+    assert got["1"]["msl_above_mllw"] is None and got["1"]["cons"]
+    assert got["8000000"]["cons"] == []
+
+
+def test_fetch_noaa_keeps_only_constituents_the_engine_knows(tmp_path):
+    def extra(url, dest):
+        cons = HARCON["HarmonicConstituents"] + [{"name": "3MS8", "amplitude": 0.02, "phase_GMT": 5.0}]
+        body = {"HarmonicConstituents": cons} if "harcon" in url else DATUMS
+        dest.write_text(json.dumps(body), encoding="utf-8")
+    got = fetch_noaa([{"id": "9455920", "type": "R"}], tmp_path, fetch=extra, pause=0)
+    assert [c[0] for c in got["9455920"]["cons"]] == ["M2", "S2"]

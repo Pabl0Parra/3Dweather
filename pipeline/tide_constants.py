@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Callable
 
 from .sources.openmeteo import http_fetch
+from .tide_predict import CONSTITUENTS
 
 API = "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations"
 MAX_REF_KM = 1000.0
@@ -101,12 +102,12 @@ def fetch_noaa(stations: list[dict], cache: Path, fetch: Callable[[str, Path], N
                 "hh": o.get("heightOffsetHighTide"), "hl": o.get("heightOffsetLowTide"),
                 "kind": o.get("heightAdjustedType") or "R"}}
         h = _get_counted(f"{API}/{sid}/harcon.json?units=metric", cache / f"{sid}-harcon.json") or {}
-        cons = [[c["name"], c["amplitude"], c["phase_GMT"]] for c in h.get("HarmonicConstituents", [])
-                if c.get("amplitude")]
+        cons = [[c["name"], c["amplitude"], c["phase_GMT"]] for c in (h.get("HarmonicConstituents") or [])
+                if c.get("amplitude") and c["name"] in CONSTITUENTS]  # NOAA predicts from its standard set
         d = None
         if cons:
             dat = _get_counted(f"{API}/{sid}/datums.json?units=metric", cache / f"{sid}-datums.json") or {}
-            v = {x["name"]: x.get("value") for x in dat.get("datums", [])}
+            v = {x["name"]: x.get("value") for x in (dat.get("datums") or [])}
             if v.get("MSL") is not None and v.get("MLLW") is not None:
                 d = round(v["MSL"] - v["MLLW"], 4)
         return sid, {"type": "R", "cons": cons, "msl_above_mllw": d}
