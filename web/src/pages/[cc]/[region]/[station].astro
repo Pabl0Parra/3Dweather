@@ -7,6 +7,8 @@ import "../../../styles/station.css";
 import SearchBox from "../../../components/SearchBox.astro";
 import { loadStationData, loadStations, makeIndex, nearbyStations, regionFor, type StationRecord } from "../../../stations/catalogue";
 import { dayLabel, height, skyFacts, type Hm, type StationData } from "../../../station/format";
+import { breadcrumbs, faqJsonLd, jsonScript, stationFaq } from "../../../seo/jsonld";
+import { siteUrl } from "../../../seo/sitemap";
 
 export function getStaticPaths() {
   const all = loadStations();
@@ -39,6 +41,11 @@ const sky = today ? skyFacts(today) : null;
 const SKY_ROWS: [string, string][] = [["sunrise", "Sunrise"], ["sunset", "Sunset"], ["daylight", "Daylight"], ["moon", "Moon"],
   ["moonrise", "Moonrise"], ["moonset", "Moonset"], ["coef", "Coefficient"], ["major", "Solunar major"],
   ["minor", "Solunar minor"], ["golden", "Golden hour"]];
+const site = siteUrl();
+const ccPath = `/${s.country_code.toLowerCase()}`;
+const faq = data ? stationFaq(s.name, data.tz, data.has_tides ? data.source : null, data.donor?.name ?? null) : [];
+const ld = [breadcrumbs(site, [["Home", "/"], [country(s.country_code), ccPath], [s.region_name, `${ccPath}/${s.region_slug}`], [s.name, `/${s.path}`]]),
+  ...(faq.length ? [faqJsonLd(faq)] : [])];
 const json = data ? JSON.stringify({ ...data, path: s.path, cc: s.country_code.toLowerCase(), region: s.region_slug })
   .replace(/</g, "\\u003c") : "";
 ---
@@ -49,6 +56,10 @@ const json = data ? JSON.stringify({ ...data, path: s.path, cc: s.country_code.t
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{s.name} tide times and weather · 3Dweather</title>
     <meta name="description" content={`Tide times, sun, moon and weather for ${s.name}, ${where}.`} />
+    <link rel="canonical" href={`${site}/${s.path}`} />
+    <meta property="og:title" content={`${s.name} tide times`} />
+    <meta property="og:url" content={`${site}/${s.path}`} />
+    {ld.map((o) => <script type="application/ld+json" set:html={jsonScript(o)}></script>)}
   </head>
   <body>
     <header class="site-header">
@@ -171,6 +182,13 @@ const json = data ? JSON.stringify({ ...data, path: s.path, cc: s.country_code.t
               <li><a href={`/${n.path}`}>{n.name}</a> <span>{distance(n.km)}{n.type === "gauge" ? " · tide gauge" : ""}</span></li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {faq.length > 0 && (
+        <section class="st-faq" aria-labelledby="st-h-faq">
+          <h2 id="st-h-faq">Questions</h2>
+          {faq.map((f) => <details><summary>{f.q}</summary><p>{f.a}</p></details>)}
         </section>
       )}
 
