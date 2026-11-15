@@ -14,7 +14,7 @@ test("the New York City page", async ({ page }) => {
   await expect(page).toHaveTitle("New York City tide times and weather · 3Dweather");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("New York City");
   await expect(page.locator(".st-crumbs")).toHaveText(/United States\s*\/\s*New York/);
-  await expect(page.locator(".st-facts")).toContainText("America/New_York");
+  await expect(page.locator(".st-place")).toContainText("America/New_York");
   await expect(page.getByRole("link", { name: "Waves on the globe" })).toHaveAttribute("href", "/wave-map#40.71,-74.01,6.0");
   await expect(page.getByRole("link", { name: "United States weather map" })).toHaveAttribute("href", "/weather-map/united-states");
   const near = page.locator(".st-near a");
@@ -36,4 +36,32 @@ test("a station page fits a 320 px phone", async ({ page }) => {
   await page.goto("/us/new-york/new-york-city");
   const [sw, cw] = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
   expect(sw).toBeLessThanOrEqual(cw);
+});
+
+// Phase 9: pages built with daily station data (python -m pipeline station-data --out web/station-data).
+const hasData = (p: string) => existsSync(fileURLToPath(new URL(`../../station-data/${p}.json`, import.meta.url)));
+
+test.describe("station data", () => {
+  test.skip(!hasData("us/new-york/new-york-city"), "station data missing");
+
+  test("New York City shows today's tides, the month and its donor", async ({ page }) => {
+    await page.goto("/us/new-york/new-york-city");
+    const rows = page.locator(".st-month tbody tr");
+    const n = await rows.count();
+    expect(n).toBeGreaterThanOrEqual(28);
+    expect(n).toBeLessThanOrEqual(31);
+    await expect(page.locator(".st-month tbody tr.today")).toHaveCount(1);
+    expect(await page.locator(".st-turns li").count()).toBeGreaterThanOrEqual(3);
+    await expect(page.locator(".st-source")).toContainText("taken from");
+    await expect(page.locator(".st-source")).toContainText("not NOAA's official predictions");
+    await expect(page.locator(".st-sky")).toContainText("Sunrise");
+  });
+
+  test("a place without tides says so", async ({ page }) => {
+    test.skip(!hasData("us/north-carolina/jacksonville"), "no-tide station data missing");
+    await page.goto("/us/north-carolina/jacksonville");
+    await expect(page.locator(".st-none")).toContainText("No tide predictions here");
+    await expect(page.locator(".st-turns")).toHaveCount(0);
+    await expect(page.locator(".st-sky")).toContainText("Sunrise");
+  });
 });

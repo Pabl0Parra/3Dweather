@@ -43,6 +43,8 @@ eot20/
 catalogue-inputs/
 catalogue-out/
 web/public/catalogue/
+web/public/tides/
+web/station-data/
 
 # NOAA per-station responses and built tide files (rebuilt by the workflows)
 noaa-cache/

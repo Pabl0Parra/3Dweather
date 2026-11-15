@@ -74,3 +74,13 @@ export function regionFor(s: StationRecord): RegionInfo | null {
   });
   return inside.sort((a, b) => area(a) - area(b))[0] ?? null;
 }
+
+export const DEFAULT_STATION_DATA = "station-data";
+
+/** The daily data file for one station (python -m pipeline station-data), or null without one. */
+export function loadStationData(path: string, dir: string = process.env.STATION_DATA_DIR || DEFAULT_STATION_DATA):
+  import("../station/format").StationData | null {
+  const file = `${dir}/${path}.json`;
+  if (!existsSync(file)) return null;
+  return JSON.parse(readFileSync(file, "utf-8"));
+}
